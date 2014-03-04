@@ -16,7 +16,7 @@ int main() {
 		maxValue = 0;
 
 	unsigned *output = (unsigned *)calloc(h*w, sizeof(unsigned));
-	unsigned pixelBufferSize = 49;//w * (2 * n) + 1;
+	unsigned pixelBufferSize = 49 + 15;//w * (2 * n) + 1;
 	unsigned *pixelBuffer = (unsigned*)calloc(pixelBufferSize, sizeof(unsigned));
 
 	for (int i = 0; i < 49; i++)
@@ -28,6 +28,9 @@ int main() {
 	pixelBuffer[13] = 4;
 	pixelBuffer[19] = 4;
 
+	for (int i = 49; i < 64; i++) {
+		pixelBuffer[i] = 0;
+	}
 	process(h, w, n, pixelBuffer, output);
 
 	for (int i = 0; i < 25; i++)
@@ -36,7 +39,7 @@ int main() {
 }
 
 
-unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, unsigned x, unsigned y, unsigned h) {
+unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, int x, int y, unsigned h) {
 
 	////////////////////////////////
 	////////////////////////////////
@@ -50,16 +53,30 @@ unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, unsigned x, unsigne
 
 	unsigned maxValue = 0;
 	unsigned inner = 0, outer = 0;
+
+	//int obs_x = x - n;
+	//int obs_y = y - n;
+
+	//for (int i = max(x-(int)n, 0); i < min(w, x + n); i++)
+	//{
+	//	inner++;
+	//	for (int j = max(y - (int)n, 0); j < min(h, y + n); j++)
+	//	{
+	//		outer++;
+	//	}
+	//}
+
 	//2n^2 + 2n comparisions
 	for (int i = 0; i <= n; i++) {
-		inner++;
+
 		for (int j = -1 * i; j <= i; j++) {
-			if ((x + j<n) || (x + j>w - n) || (y + i<n) || (y + i>h - n))
+
+			if ((x + j<0) || (x + j>w - n) || (y + i<0) || (y + i>h - n))
 			{
 				//do nothing
 			}
-			else if (!(i == n && j == 0)) { //Don't want the middle pixel
-				outer++;
+			else if (!(i == n && j == 0)) //Don't want the middle pixel
+			{
 				maxValue = std::max(ptrBuffer[i*w + j], maxValue);
 			}
 
@@ -68,7 +85,7 @@ unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, unsigned x, unsigne
 	//Lower half of diamond
 	for (int i = 0; i < n; i++) {
 		for (int j = -1 * i; j <= i; j++) {
-			if ((x + j<n) || (x + j>w - n) || (y + i<n) || (y + i>h - n))
+			if ((x + j<0) || (x + j>w - n) || (y + i<0) || (y + i>h - n))
 			{
 				//do nothing
 			}
@@ -121,6 +138,7 @@ void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer, unsigned
 		buffer[n*w + pixelBufferPosition] = pixelBuffer[pixelBufferPosition];
 
 	//Forwards	
+	int d = 0;
 	for (int j = 0; j < h /*- 2*n*/; j++)
 	{
 		for (int i = 0/*n*/; i < w /*- n*/; i++)
@@ -132,14 +150,8 @@ void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer, unsigned
 			//TODO: add circular buffer
 			for (int k = 0; k < 2 * w * n; k++)
 				buffer[k] = buffer[k + 1];
-			if (i >= w - n - 1) {
-				buffer[2 * w * n] = 0;
-			}
-			else
-			{
-				buffer[2 * w  * n] = pixelBuffer[pixelBufferPosition++];
-			}
-
+			buffer[2 * w  * n] = pixelBuffer[pixelBufferPosition++];
+			d++;
 		}
 	}
 
