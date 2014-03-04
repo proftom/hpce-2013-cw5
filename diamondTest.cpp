@@ -15,7 +15,7 @@ int main() {
 		h = 7,
 		maxValue = 0;
 
-	unsigned *output = (unsigned *)calloc(49, sizeof(unsigned));
+	unsigned *output = (unsigned *)calloc(h*w, sizeof(unsigned));
 	unsigned pixelBufferSize = 49;//w * (2 * n) + 1;
 	unsigned *pixelBuffer = (unsigned*)calloc(pixelBufferSize, sizeof(unsigned));
 
@@ -36,7 +36,7 @@ int main() {
 }
 
 
-unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer) {
+unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, unsigned x, unsigned y, unsigned h) {
 
 	////////////////////////////////
 	////////////////////////////////
@@ -54,17 +54,27 @@ unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer) {
 	for (int i = 0; i <= n; i++) {
 		inner++;
 		for (int j = -1 * i; j <= i; j++) {
-			//Don't want the middle pixel
-			if (!(i == n && j == 0)) {
+			if ((x + j<n) || (x + j>w - n) || (y + i<n) || (y + i>h - n))
+			{
+				//do nothing
+			}
+			else if (!(i == n && j == 0)) { //Don't want the middle pixel
 				outer++;
 				maxValue = std::max(ptrBuffer[i*w + j], maxValue);
 			}
+
 		}
 	}
-	//Check lower half of diamond
+	//Lower half of diamond
 	for (int i = 0; i < n; i++) {
 		for (int j = -1 * i; j <= i; j++) {
-			maxValue = std::max(ptrBuffer[(2 * n - i)*w + j], maxValue);
+			if ((x + j<n) || (x + j>w - n) || (y + i<n) || (y + i>h - n))
+			{
+				//do nothing
+			}
+			else {
+				maxValue = std::max(ptrBuffer[(2 * n - i)*w + j], maxValue);
+			}
 		}
 	}
 	return maxValue;
@@ -96,30 +106,13 @@ unsigned erode(unsigned w, unsigned n, unsigned *ptrBuffer) {
 void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer, unsigned *output)
 {
 
-	auto fwd = n < 0 ? erode : dilate;
-	auto rev = n < 0 ? dilate : erode;
+	//auto fwd = n < 0 ? erode : dilate;
+	//auto rev = n < 0 ? dilate : erode;
 
 	//Make a pixel buffer of length 2wn + 1
-	unsigned *buffer = (unsigned*)malloc((2 * w*n + 1)*sizeof(unsigned));
+	unsigned *buffer = (unsigned*)malloc((2 * (w*n) + 1)*sizeof(unsigned));
 
 	unsigned pixelBufferPosition = 0;
-
-	////Initialise the buffer
-	//unsigned x = 0, y = -1;
-	//for (int j = y; i <= n; j++)
-	//{
-	//	for (int i = x-n; i <= n; i++)
-	//	{
-	//		//If off edge of image set to either min or max
-	//		if (j < 0 || i < 0) {
-	//			buffer[j*w + i] = 0;
-	//		}
-	//		//Take correct value 
-	//		else {
-
-	//		}
-	//	}
-	//}
 
 	//Initialise the buffer
 	for (int i = 0; i < n*w; i++)	//Outside the image area
@@ -127,24 +120,24 @@ void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer, unsigned
 	for (pixelBufferPosition = 0; pixelBufferPosition < n*w + 1; pixelBufferPosition++)	//Inside the image area 
 		buffer[n*w + pixelBufferPosition] = pixelBuffer[pixelBufferPosition];
 
-	//Forwards
-
+	//Forwards	
 	for (int j = 0; j < h /*- 2*n*/; j++)
 	{
 		for (int i = 0/*n*/; i < w /*- n*/; i++)
 		{
 			//output[j*(h - 2 * n) + i - n] = fwd(w, n, buffer);
-			output[j * w + i] = fwd(w, n, buffer);
+			output[j * w + i] = dilate(w, n, buffer, j, i, h);
+
 			//Update buffer - drop first element, add new element
 			//TODO: add circular buffer
-			for (int k = 0; k < 2 * n* w; k++)
+			for (int k = 0; k < 2 * w * n; k++)
 				buffer[k] = buffer[k + 1];
 			if (i >= w - n - 1) {
-				buffer[2 * n*w] = 0;
+				buffer[2 * w * n] = 0;
 			}
 			else
 			{
-				buffer[2 * n*w] = pixelBuffer[pixelBufferPosition++];
+				buffer[2 * w  * n] = pixelBuffer[pixelBufferPosition++];
 			}
 
 		}
@@ -153,13 +146,12 @@ void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer, unsigned
 	for (int i = 0; i < 49; i++)
 		cout << output[i] << " ";
 
-	//Backwards
-
+	//Backwards	
 	for (int j = 0; j < h - 2 * n; j++)
 	{
 		for (int i = n; i < w - n; i++)
 		{
-			output[j*(h - 2 * n) + i - n] = rev(w, n, &pixelBuffer[j*w + i]);
+			//output[j*(h - 2 * n) + i - n] = rev(w, n, &pixelBuffer[j*w + i]);
 		}
 	}
 
