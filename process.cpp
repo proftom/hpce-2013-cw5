@@ -402,6 +402,84 @@ void process(int levels, unsigned w, unsigned h, unsigned /*bits*/, std::vector<
 	}
 }
 
+
+unsigned dilate2(unsigned w, unsigned n, unsigned *ptrBuffer) {
+
+	////////////////////////////////
+	////////////////////////////////
+	////     I      <-upper for loop starts here
+	////   I I I
+	//// I I O I I  <-upper for loop ends here
+	////   I I I    <-lower for loop starts
+	////     I      <-lower for loop finishes
+	///////////////////////////////
+	///////////////////////////////
+
+	unsigned maxValue = 0;
+	//2n^2 + 2n comparisions
+	for (int i = 0; i <= n; i++) {
+		for (int j = -1 * i; j <= i; j++) {
+			//Don't want the middle pixel
+			if (!(i == n && j == 0)) {
+				maxValue = std::max(ptrBuffer[i*w + j], maxValue);
+			}
+		}
+	}
+	//Check lower half of diamond
+	for (int i = 0; i < n; i++) {
+		for (int j = -1 * i; j <= i; j++) {
+			maxValue = std::max(ptrBuffer[(2 * n - i)*w + j], maxValue);
+		}
+	}
+	return maxValue;
+}
+
+
+unsigned erode2(unsigned w, unsigned n, unsigned *ptrBuffer) {
+
+	unsigned minValue = 999;
+	//2n^2 + 2n comparisions
+	for (int i = 0; i <= n; i++) {
+		for (int j = -1 * i; j <= i; j++) {
+			if (!(i == n && j == 0)) {
+				minValue = std::min(ptrBuffer[i*w + j], minValue);
+			}
+		}
+	}
+	//Check lower half of diamond
+	for (int i = 0; i < n; i++) {
+		for (int j = -1 * i; j <= i; j++) {
+			minValue = std::min(ptrBuffer[(2 * n - i)*w + j], minValue);
+		}
+	}
+	return minValue;
+}
+
+void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer)
+{
+	std::vector<uint32_t> buffer(w*h);
+
+	auto fwd = n < 0 ? erode2 : dilate2;
+	auto rev = n < 0 ? dilate2 : erode2;
+
+	//Need to handle edge caes
+	for (int i = n; i < w-n; i++){
+		for (int j = n; j < h-n; j++)
+		{
+			std::cerr<<fwd(w, n, &pixelBuffer[j*w + i])<< ",";
+		}
+	}
+
+	for (int i = n; i < w-n; i++){
+		for (int j = n; j < h-n; j++)
+		{
+			rev(w, n, &pixelBuffer[j*w + i]);
+		}
+	}
+
+}
+
+
 // You may want to play with this to check you understand what is going on
 void invert(int levels, unsigned w, unsigned h, unsigned bits, std::vector<uint32_t> &pixels)
 {
@@ -412,68 +490,69 @@ void invert(int levels, unsigned w, unsigned h, unsigned bits, std::vector<uint3
 	}
 }
 
-int main(int argc, char *argv[])
-{
-	try{
-		if(argc<3){
-			fprintf(stderr, "Usage: process width height [bits] [levels]\n");
-			fprintf(stderr, "   bits=8 by default\n");
-			fprintf(stderr, "   levels=1 by default\n");
-			exit(1);
-		}
-		
-		unsigned w=atoi(argv[1]);
-		unsigned h=atoi(argv[2]);
-		
-		unsigned bits=8;
-		if(argc>3){
-			bits=atoi(argv[3]);
-		}
-		
-		if(bits>32)
-			throw std::invalid_argument("Bits must be <= 32.");
-		
-		unsigned tmp=bits;
-		while(tmp!=1){
-			tmp>>=1;
-			if(tmp==0)
-				throw std::invalid_argument("Bits must be a binary power.");
-		}
-		
-		if( ((w*bits)%64) != 0){
-			throw std::invalid_argument(" width*bits must be divisible by 64.");
-		}
-		
-		int levels=1;
-		if(argc>4){
-			levels=atoi(argv[4]);
-		}
-		
-		fprintf(stderr, "Processing %d x %d image with %d bits per pixel.\n", w, h, bits);
-		
-		uint64_t cbRaw=uint64_t(w)*h*bits/8;
-		std::vector<uint64_t> raw(cbRaw/8);
-		
-		std::vector<uint32_t> pixels(w*h);
-		
-		while(1){
-			if(!read_blob(STDIN_FILENO, cbRaw, &raw[0]))
-				break;	// No more images
-			unpack_blob(w, h, bits, &raw[0], &pixels[0]);		
-			
-			process(levels, w, h, bits, pixels);
-			//invert(levels, w, h, bits, pixels);
-			
-			pack_blob(w, h, bits, &pixels[0], &raw[0]);
-			write_blob(STDOUT_FILENO, cbRaw, &raw[0]);
-		}
-		
-		return 0;
-	}catch(std::exception &e){
-		std::cerr<<"Caught exception : "<<e.what()<<"\n";
-		return 1;
-	}
-}
+//int main(int argc, char *argv[])
+//{
+//	try{
+//		if(argc<3){
+//			fprintf(stderr, "Usage: process width height [bits] [levels]\n");
+//			fprintf(stderr, "   bits=8 by default\n");
+//			fprintf(stderr, "   levels=1 by default\n");
+//			exit(1);
+//		}
+//		
+//		unsigned w=atoi(argv[1]);
+//		unsigned h=atoi(argv[2]);
+//		
+//		unsigned bits=8;
+//		if(argc>3){
+//			bits=atoi(argv[3]);
+//		}
+//		
+//		if(bits>32)
+//			throw std::invalid_argument("Bits must be <= 32.");
+//		
+//		unsigned tmp=bits;
+//		while(tmp!=1){
+//			tmp>>=1;
+//			if(tmp==0)
+//				throw std::invalid_argument("Bits must be a binary power.");
+//		}
+//		
+//		if( ((w*bits)%64) != 0){
+//			throw std::invalid_argument(" width*bits must be divisible by 64.");
+//		}
+//		
+//		int levels=1;
+//		if(argc>4){
+//			levels=atoi(argv[4]);
+//		}
+//		
+//		fprintf(stderr, "Processing %d x %d image with %d bits per pixel.\n", w, h, bits);
+//		
+//		uint64_t cbRaw=uint64_t(w)*h*bits/8;
+//		std::vector<uint64_t> raw(cbRaw/8);
+//		
+//		std::vector<uint32_t> pixels(w*h);
+//		
+//		while(1){
+//			if(!read_blob(STDIN_FILENO, cbRaw, &raw[0]))
+//				break;	// No more images
+//			unpack_blob(w, h, bits, &raw[0], &pixels[0]);		
+//			
+//			process(levels, w, h, bits, pixels);
+//			//invert(levels, w, h, bits, pixels);
+//			
+//			pack_blob(w, h, bits, &pixels[0], &raw[0]);
+//			write_blob(STDOUT_FILENO, cbRaw, &raw[0]);
+//		}
+//		
+//		return 0;
+//	}catch(std::exception &e){
+//		std::cerr<<"Caught exception : "<<e.what()<<"\n";
+//		return 1;
+//	}
+//}
+
 
 void loadShitIn(unsigned levels, unsigned width, unsigned bits) {
 	
@@ -505,82 +584,6 @@ void loadShitIn(unsigned levels, unsigned width, unsigned bits) {
 
 }
 
-void dilate(unsigned w, unsigned h, unsigned levels, const std::vector<uint32_t> &input, std::vector<uint32_t> &output)
-{
-	//Buffer will need to be of size 2*width*levels+1
-	unsigned pixelBufferSize = w * (2 * levels - 1);
-	unsigned *pixelBuffer = (unsigned*)calloc(pixelBufferSize, sizeof(unsigned));
-	
-	unsigned i, j, maxValue = 0;
-	for (i = 0; i < n; i++)
-		for (j = 0; j < i; j++) {
-			maxValue = std::max(pixelBuffer[i*w - j], maxValue);
-		}
-	
-	//Now do middle row (not taking center coordinate)
-	for (i = 1; i <= n; i++) 
-		maxValue = std::max(pixelBuffer[n*w - i]);
-
-	//We now have a  max value for the upper left quadrant
-
-	//Now find max of the lower left quadrant and replace if lower
-	
-
-	//Find max over whole diamond
-	for (i = 0; i < 2*n-1; i++)
-	for (j = -1*i; j < i; j++) {
-		maxValue = std::max(pixelBuffer[i*w + j], maxValue);
-	}
-
-
-
-
-	auto in = [&](int x, int y) -> uint32_t { return input[y*w + x]; };
-	auto out = [&](int x, int y) -> uint32_t & {return output[y*w + x]; };
-
-	for (unsigned x = 0; x<w; x++){
-		if (x == 0){
-			out(0, 0) = vmax(in(0, 0), in(0, 1), in(1, 0));
-			for (unsigned y = 1; y<h - 1; y++){
-				out(0, y) = vmax(in(0, y), in(0, y - 1), in(1, y), in(0, y + 1));
-			}
-			out(0, h - 1) = vmax(in(0, h - 1), in(0, h - 2), in(1, h - 1));
-		}
-		else if (x<w - 1){
-			out(x, 0) = vmax(in(x, 0), in(x - 1, 0), in(x, 1), in(x + 1, 0));
-			for (unsigned y = 1; y<h - 1; y++){
-				out(x, y) = vmax(in(x, y), in(x - 1, y), in(x, y - 1), in(x, y + 1), in(x + 1, y));
-			}
-			out(x, h - 1) = vmax(in(x, h - 1), in(x - 1, h - 1), in(x, h - 2), in(x + 1, h - 1));
-		}
-		else{
-			out(w - 1, 0) = vmax(in(w - 1, 0), in(w - 1, 1), in(w - 2, 0));
-			for (unsigned y = 1; y<h - 1; y++){
-				out(w - 1, y) = vmax(in(w - 1, y), in(w - 1, y - 1), in(w - 2, y), in(w - 1, y + 1));
-			}
-			out(w - 1, h - 1) = vmax(in(w - 1, h - 1), in(w - 1, h - 2), in(w - 2, h - 1));
-		}
-	}
-}
-
-
-void processSomeStoof(unsigned* ptrHead, unsigned* ptrTail) {
-
-	//Each "quadrant" of the diamond requires 0.5n^2 + 1.5n
-	//No edge case
-	
-
-	//Upper left 
-	
-		
-	//Lower lower
-
-
-	//Advance circular buffer
-	ptrHead++;
-
-}
-
 //Pretty poor circular buffer
 unsigned lookupFromBuffer(unsigned *bufferOrigin, unsigned headOrdinate, unsigned lengthOfBuffer, unsigned ordinate) 
 {
@@ -589,62 +592,25 @@ unsigned lookupFromBuffer(unsigned *bufferOrigin, unsigned headOrdinate, unsigne
 
 int main() {
 	unsigned
-		n = 2,
+		n = 1,
 		w = 7,
+		h = 7,
 		maxValue = 0;
 
 	unsigned pixelBufferSize = w * (2 * n) + 1;
 	unsigned *pixelBuffer = (unsigned*)calloc(pixelBufferSize, sizeof(unsigned));
 
-	pixelBuffer[0] = 1;
-	pixelBuffer[6] = 50; pixelBuffer[7] = 20; pixelBuffer[8] = 3;
-	pixelBuffer[12] = 50; pixelBuffer[13] = 50; pixelBuffer[14] = 3000; pixelBuffer[15] = 3; pixelBuffer[16] = 12;
-	pixelBuffer[20] = 3; pixelBuffer[21] = 230; pixelBuffer[22] = 3;
-	pixelBuffer[28] = 900;
+	for (int i = 0; i < 49; i++)
+		pixelBuffer[i] = i;
 
-	auto dilateValue = dilate(w, n, &pixelBuffer[0]);
+	//pixelBuffer[0] = 1;
+	//pixelBuffer[6] = 50; pixelBuffer[7] = 20; pixelBuffer[8] = 3;
+	//pixelBuffer[12] = 50; pixelBuffer[13] = 50; pixelBuffer[14] = 3000; pixelBuffer[15] = 3; pixelBuffer[16] = 12;
+	//pixelBuffer[20] = 3; pixelBuffer[21] \= 230; pixelBuffer[22] = 3;
+	//pixelBuffer[28] = 900;
+
+	process(h, w, n, pixelBuffer);
+	//auto dilateValue = dilate(w, n, &pixelBuffer[0]);
 
 }
 
-
-
-unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer) {
-
-	unsigned maxValue = 0;
-	//2n^2 + 2n comparisions
-	for (int i = 0; i <= n; i++) {
-		for (int j = -1 * i; j <= i; j++) {
-			if (!(i == n && j == 0)) {
-				maxValue = std::max(ptrBuffer[i*w + j], maxValue);
-			}
-		}
-	}
-	//Check lower half of diamond
-	for (int i = 0; i < n; i++) {
-		for (int j = -1 * i; j <= i; j++) {
-			maxValue = std::max(ptrBuffer[(2 * n - i)*w + j], maxValue);
-		}
-	}
-	return maxValue;
-}
-
-
-unsigned erode(unsigned w, unsigned n, unsigned *ptrBuffer) {
-
-	unsigned minValue = INT_MAX;
-	//2n^2 + 2n comparisions
-	for (int i = 0; i <= n; i++) {
-		for (int j = -1 * i; j <= i; j++) {
-			if (!(i == n && j == 0)) {
-				minValue = std::min(ptrBuffer[i*w + j], minValue);
-			}
-		}
-	}
-	//Check lower half of diamond
-	for (int i = 0; i < n; i++) {
-		for (int j = -1 * i; j <= i; j++) {
-			minValue = std::min(ptrBuffer[(2 * n - i)*w + j], minValue);
-		}
-	}
-	return minValue;
-}
