@@ -1,14 +1,36 @@
 
 #include <algorithm>
-#include <cassert>
-#include <stdexcept>
-#include <vector>
-#include <cstdio>
 #include <iostream>
-#include <string>
 
 
-unsigned dilate2(unsigned w, unsigned n, unsigned *ptrBuffer) {
+void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer, unsigned*);
+unsigned erode2(unsigned w, unsigned n, unsigned *ptrBuffer);
+unsigned dilate2(unsigned w, unsigned n, unsigned *ptrBuffer);
+
+using namespace std;
+int main() {
+	unsigned
+		n = 1,
+		w = 7,
+		h = 7,
+		maxValue = 0;
+
+	unsigned *output = (unsigned *)calloc(25, sizeof(unsigned));
+	unsigned pixelBufferSize = 49;//w * (2 * n) + 1;
+	unsigned *pixelBuffer = (unsigned*)calloc(pixelBufferSize, sizeof(unsigned));
+
+	for (int i = 0; i < 49; i++)
+		pixelBuffer[i] = i;
+
+	process(h, w, n, pixelBuffer, output);
+
+	for (int i = 0; i < 25; i++)
+		cout << output[i] << " ";
+
+}
+
+
+unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer) {
 
 	////////////////////////////////
 	////////////////////////////////
@@ -43,17 +65,15 @@ unsigned dilate2(unsigned w, unsigned n, unsigned *ptrBuffer) {
 }
 
 
-unsigned erode2(unsigned w, unsigned n, unsigned *ptrBuffer) {
+unsigned erode(unsigned w, unsigned n, unsigned *ptrBuffer) {
 
 	unsigned minValue = 999;
 	unsigned inner = 0, outer = 0;
 	//2n^2 + 2n comparisions
 	for (int i = 0; i <= n; i++) {
-		inner++;
 		for (int j = -1 * i; j <= i; j++) {
 			//Don't want the middle pixel
 			if (!(i == n && j == 0)) {
-				outer++;
 				minValue = std::min(ptrBuffer[i*w + j], minValue);
 			}
 		}
@@ -67,13 +87,11 @@ unsigned erode2(unsigned w, unsigned n, unsigned *ptrBuffer) {
 	return minValue;
 }
 
-void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer)
+void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer, unsigned *output)
 {
 
-	auto fwd = n < 0 ? erode2 : dilate2;
-	auto rev = n < 0 ? dilate2 : erode2;
-
-	unsigned *output = (unsigned*)calloc((w - n - n)*(h - 2 * n), sizeof(unsigned));
+	auto fwd = n < 0 ? erode : dilate;
+	auto rev = n < 0 ? dilate : erode;
 
 	//Need to handle edge caes
 
@@ -92,30 +110,6 @@ void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer)
 			output[j*(h - 2 * n) + i - n] = rev(w, n, &pixelBuffer[j*w + i]);
 		}
 	}
-
-}
-
-int main() {
-	unsigned
-		n = 1,
-		w = 7,
-		h = 7,
-		maxValue = 0;
-
-	unsigned pixelBufferSize = w * (2 * n) + 1;
-	unsigned *pixelBuffer = (unsigned*)calloc(pixelBufferSize, sizeof(unsigned));
-
-	for (int i = 0; i < 49; i++)
-		pixelBuffer[i] = i;
-
-	//pixelBuffer[0] = 1;
-	//pixelBuffer[6] = 50; pixelBuffer[7] = 20; pixelBuffer[8] = 3;
-	//pixelBuffer[12] = 50; pixelBuffer[13] = 50; pixelBuffer[14] = 3000; pixelBuffer[15] = 3; pixelBuffer[16] = 12;
-	//pixelBuffer[20] = 3; pixelBuffer[21] \= 230; pixelBuffer[22] = 3;
-	//pixelBuffer[28] = 900;
-
-	process(h, w, n, pixelBuffer);
-	//auto dilateValue = dilate(w, n, &pixelBuffer[0]);
 
 }
 
