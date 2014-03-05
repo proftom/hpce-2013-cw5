@@ -28,13 +28,13 @@ int main() {
 	pixelBuffer[13] = 4;
 	pixelBuffer[19] = 4;
 
+	//The shitty bit after the image (for cirulcar buffer)
 	for (int i = 49; i < 64; i++) {
 		pixelBuffer[i] = 0;
 	}
+
 	process(h, w, n, pixelBuffer, output);
 
-	for (int i = 0; i < 25; i++)
-		cout << output[i] << " ";
 
 }
 
@@ -71,10 +71,22 @@ unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, int x, int y, unsig
 
 		for (int j = -1 * i; j <= i; j++) {
 
-			if ((x + j<0) || (x + j>w - n) || (y + i<0) || (y + i>h - n))
+			if (x + j<0)
 			{
-				//do nothing
+				cout << x << " " << y << " outside of left bound\n\r";
 			}
+			if (x + j>(int)w - (int)n)
+			{
+				cout << x << " " << y << " outside of right bound\n\r";
+			}
+			if (y + i - (int)n< 0)
+			{
+				cout << x << " " << y << " outside of top bound\n\r";
+			}
+			//if (y + i - (int) n>(int)h - (int)n)
+			//{
+			//	cout << x << " " << y << " outside of bottom bound\n\r";
+			//}
 			else if (!(i == n && j == 0)) //Don't want the middle pixel
 			{
 				maxValue = std::max(ptrBuffer[i*w + j], maxValue);
@@ -85,15 +97,17 @@ unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, int x, int y, unsig
 	//Lower half of diamond
 	for (int i = 0; i < n; i++) {
 		for (int j = -1 * i; j <= i; j++) {
-			if ((x + j<0) || (x + j>w - n) || (y + i<0) || (y + i>h - n))
+
+			if (y + n + 1 + i - (int)n>(int)h - (int)n)
 			{
-				//do nothing
+				cout << x << " " << y << " outside of bottom bound\n\r";
 			}
 			else {
 				maxValue = std::max(ptrBuffer[(2 * n - i)*w + j], maxValue);
 			}
 		}
 	}
+	cout << "<<<<\n\r";
 	return maxValue;
 }
 
