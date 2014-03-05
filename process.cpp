@@ -1,4 +1,3 @@
-#include <unistd.h>
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
@@ -6,6 +5,7 @@
 #include <cstdio>
 #include <iostream>
 #include <string>
+#include <cstdint>
 
 /*
 This is a program for performing morphological operations in gray-scale
@@ -14,6 +14,8 @@ morphological operations can be found here:
 http://homepages.inf.ed.ac.uk/rbf/HIPR2/matmorph.htm
 
 Changelog:
+- 2014/03/03: Patches to make native windows work, plus some comments
+              about platform portability.
 - 2014/03/02: Typo in second paragraph(!): "a close is a dilate followed by an open" -> "a close is a dilate followed by an erode."
               Thanks to Oskar Weigl.
               Made clear that negative values of levels are open, positive are close (wasn't explicit before).
@@ -146,6 +148,11 @@ directory, or included with relative paths.
 The compiler will make OpenCL 1.1 available for #include from
 "CL/*" and "OpenCL/*", and TBB 4.2 from "tbb/*". No other
 libraries should be assumed, beyond standard C++11 libraries.
+Practically speaking, common posix libraries are acceptable (i.e.
+things which are in cygwin+linux+macos+mingw), but attempt for
+portability. Visual studio can be used for development, but be
+careful to avoid windows-specific APIs (e.g. try compiling on
+cygwin before submitting).
 
 Your program will always be run with the "src" directory
 as its working directory, so you can load any kernel
@@ -187,6 +194,31 @@ I would suggest you keep your code private, not least because
 you are competing with the others.
 
 */
+
+
+#if !(defined(_WIN32) || defined(_WIN64))
+#include <unistd.h>
+void set_binary_io()
+{}
+#else
+// http://stackoverflow.com/questions/341817/is-there-a-replacement-for-unistd-h-for-windows-visual-c
+// http://stackoverflow.com/questions/13198627/using-file-descriptors-in-visual-studio-2010-and-windows
+// Note: I could have just included <io.h> and msvc would whinge mightily, but carry on
+	
+#include <io.h>
+#include <fcntl.h>
+
+#define read _read
+#define write _write
+#define STDIN_FILENO 0
+#define STDOUT_FILENO 1
+
+void set_binary_io()
+{
+	_setmode(_fileno(stdin), _O_BINARY);
+	_setmode(_fileno(stdout), _O_BINARY);
+}
+#endif
 
 
 ////////////////////////////////////////////
@@ -232,7 +264,7 @@ void unpack_blob(unsigned w, unsigned h, unsigned bits, const uint64_t *pRaw, ui
 			bufferedBits=64;
 		}
 		
-		pUnpacked[i]=buffer&MASK;
+		pUnpacked[i]=uint32_t(buffer&MASK);
 		buffer=buffer>>bits;
 		bufferedBits-=bits;
 	}
@@ -273,8 +305,9 @@ bool read_blob(int fd, uint64_t cbBlob, void *pBlob)
 		int got=read(fd, pBytes+done, todo);
 		if(got==0 && done==0)
 			return false;	// end of file
-		if(got<=0)
+		if(got<=0){
 			throw std::invalid_argument("Read failure.");
+		}
 		done+=got;
 	}
 	
@@ -402,86 +435,8 @@ void process(int levels, unsigned w, unsigned h, unsigned /*bits*/, std::vector<
 	}
 }
 
-
-unsigned dilate2(unsigned w, unsigned n, unsigned *ptrBuffer) {
-
-	////////////////////////////////
-	////////////////////////////////
-	////     I      <-upper for loop starts here
-	////   I I I
-	//// I I O I I  <-upper for loop ends here
-	////   I I I    <-lower for loop starts
-	////     I      <-lower for loop finishes
-	///////////////////////////////
-	///////////////////////////////
-
-	unsigned maxValue = 0;
-	//2n^2 + 2n comparisions
-	for (int i = 0; i <= n; i++) {
-		for (int j = -1 * i; j <= i; j++) {
-			//Don't want the middle pixel
-			if (!(i == n && j == 0)) {
-				maxValue = std::max(ptrBuffer[i*w + j], maxValue);
-			}
-		}
-	}
-	//Check lower half of diamond
-	for (int i = 0; i < n; i++) {
-		for (int j = -1 * i; j <= i; j++) {
-			maxValue = std::max(ptrBuffer[(2 * n - i)*w + j], maxValue);
-		}
-	}
-	return maxValue;
-}
-
-
-unsigned erode2(unsigned w, unsigned n, unsigned *ptrBuffer) {
-
-	unsigned minValue = 999;
-	//2n^2 + 2n comparisions
-	for (int i = 0; i <= n; i++) {
-		for (int j = -1 * i; j <= i; j++) {
-			if (!(i == n && j == 0)) {
-				minValue = std::min(ptrBuffer[i*w + j], minValue);
-			}
-		}
-	}
-	//Check lower half of diamond
-	for (int i = 0; i < n; i++) {
-		for (int j = -1 * i; j <= i; j++) {
-			minValue = std::min(ptrBuffer[(2 * n - i)*w + j], minValue);
-		}
-	}
-	return minValue;
-}
-
-void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer)
-{
-	std::vector<uint32_t> buffer(w*h);
-
-	auto fwd = n < 0 ? erode2 : dilate2;
-	auto rev = n < 0 ? dilate2 : erode2;
-
-	//Need to handle edge caes
-	for (int i = n; i < w-n; i++){
-		for (int j = n; j < h-n; j++)
-		{
-			std::cerr<<fwd(w, n, &pixelBuffer[j*w + i])<< ",";
-		}
-	}
-
-	for (int i = n; i < w-n; i++){
-		for (int j = n; j < h-n; j++)
-		{
-			rev(w, n, &pixelBuffer[j*w + i]);
-		}
-	}
-
-}
-
-
 // You may want to play with this to check you understand what is going on
-void invert(int levels, unsigned w, unsigned h, unsigned bits, std::vector<uint32_t> &pixels)
+void invert(unsigned w, unsigned h, unsigned bits, std::vector<uint32_t> &pixels)
 {
 	uint32_t mask=0xFFFFFFFFul>>bits;
 	
@@ -490,127 +445,68 @@ void invert(int levels, unsigned w, unsigned h, unsigned bits, std::vector<uint3
 	}
 }
 
-//int main(int argc, char *argv[])
-//{
-//	try{
-//		if(argc<3){
-//			fprintf(stderr, "Usage: process width height [bits] [levels]\n");
-//			fprintf(stderr, "   bits=8 by default\n");
-//			fprintf(stderr, "   levels=1 by default\n");
-//			exit(1);
-//		}
-//		
-//		unsigned w=atoi(argv[1]);
-//		unsigned h=atoi(argv[2]);
-//		
-//		unsigned bits=8;
-//		if(argc>3){
-//			bits=atoi(argv[3]);
-//		}
-//		
-//		if(bits>32)
-//			throw std::invalid_argument("Bits must be <= 32.");
-//		
-//		unsigned tmp=bits;
-//		while(tmp!=1){
-//			tmp>>=1;
-//			if(tmp==0)
-//				throw std::invalid_argument("Bits must be a binary power.");
-//		}
-//		
-//		if( ((w*bits)%64) != 0){
-//			throw std::invalid_argument(" width*bits must be divisible by 64.");
-//		}
-//		
-//		int levels=1;
-//		if(argc>4){
-//			levels=atoi(argv[4]);
-//		}
-//		
-//		fprintf(stderr, "Processing %d x %d image with %d bits per pixel.\n", w, h, bits);
-//		
-//		uint64_t cbRaw=uint64_t(w)*h*bits/8;
-//		std::vector<uint64_t> raw(cbRaw/8);
-//		
-//		std::vector<uint32_t> pixels(w*h);
-//		
-//		while(1){
-//			if(!read_blob(STDIN_FILENO, cbRaw, &raw[0]))
-//				break;	// No more images
-//			unpack_blob(w, h, bits, &raw[0], &pixels[0]);		
-//			
-//			process(levels, w, h, bits, pixels);
-//			//invert(levels, w, h, bits, pixels);
-//			
-//			pack_blob(w, h, bits, &pixels[0], &raw[0]);
-//			write_blob(STDOUT_FILENO, cbRaw, &raw[0]);
-//		}
-//		
-//		return 0;
-//	}catch(std::exception &e){
-//		std::cerr<<"Caught exception : "<<e.what()<<"\n";
-//		return 1;
-//	}
-//}
-
-
-void loadShitIn(unsigned levels, unsigned width, unsigned bits) {
-	
-	//  S				E
-	//[ X_0, X_1, ... , X_n ]
-	//
-	// <------------------->
-	//    pixelBufferSize
-	//
-	//    E    S
-	// [ X_n+1, X_1, ... , X_n ]
-
-	//Once we have 2*w*n + 1 elements of data, we can begin processing 
-	unsigned pixelBufferSize = width * (2 * levels - 1);
-	unsigned *pixelBuffer = (unsigned*)calloc(pixelBufferSize, sizeof(unsigned));
-	//unsigned *pixelBufferTail = pixelBuffer + pixelBufferSize - 1;
-	//TODO: look at using boost circular buffer
-
-	//Histogram -initialised to 0s
-	unsigned *histogram = (unsigned*)calloc(1 << bits, sizeof(unsigned)); 
-
-	//Read first 2*w*n + 1 elements of data, populating the histogram 
-	//
-	for (int i = 0; i < 2 * width + 1; i++) 
-	{
-		//Pretend to fill up
-	}
-
-
-}
-
-//Pretty poor circular buffer
-unsigned lookupFromBuffer(unsigned *bufferOrigin, unsigned headOrdinate, unsigned lengthOfBuffer, unsigned ordinate) 
+int main(int argc, char *argv[])
 {
-	return *(bufferOrigin + (headOrdinate + ordinate) % lengthOfBuffer);
-}
-
-int main() {
-	unsigned
-		n = 1,
-		w = 7,
-		h = 7,
-		maxValue = 0;
-
-	unsigned pixelBufferSize = w * (2 * n) + 1;
-	unsigned *pixelBuffer = (unsigned*)calloc(pixelBufferSize, sizeof(unsigned));
-
-	for (int i = 0; i < 49; i++)
-		pixelBuffer[i] = i;
-
-	//pixelBuffer[0] = 1;
-	//pixelBuffer[6] = 50; pixelBuffer[7] = 20; pixelBuffer[8] = 3;
-	//pixelBuffer[12] = 50; pixelBuffer[13] = 50; pixelBuffer[14] = 3000; pixelBuffer[15] = 3; pixelBuffer[16] = 12;
-	//pixelBuffer[20] = 3; pixelBuffer[21] \= 230; pixelBuffer[22] = 3;
-	//pixelBuffer[28] = 900;
-
-	process(h, w, n, pixelBuffer);
-	//auto dilateValue = dilate(w, n, &pixelBuffer[0]);
-
+	try{
+		if(argc<3){
+			fprintf(stderr, "Usage: process width height [bits] [levels]\n");
+			fprintf(stderr, "   bits=8 by default\n");
+			fprintf(stderr, "   levels=1 by default\n");
+			exit(1);
+		}
+		
+		unsigned w=atoi(argv[1]);
+		unsigned h=atoi(argv[2]);
+		
+		unsigned bits=8;
+		if(argc>3){
+			bits=atoi(argv[3]);
+		}
+		
+		if(bits>32)
+			throw std::invalid_argument("Bits must be <= 32.");
+		
+		unsigned tmp=bits;
+		while(tmp!=1){
+			tmp>>=1;
+			if(tmp==0)
+				throw std::invalid_argument("Bits must be a binary power.");
+		}
+		
+		if( ((w*bits)%64) != 0){
+			throw std::invalid_argument(" width*bits must be divisible by 64.");
+		}
+		
+		int levels=1;
+		if(argc>4){
+			levels=atoi(argv[4]);
+		}
+		
+		fprintf(stderr, "Processing %d x %d image with %d bits per pixel.\n", w, h, bits);
+		
+		uint64_t cbRaw=uint64_t(w)*h*bits/8;
+		std::vector<uint64_t> raw(size_t(cbRaw/8));
+		
+		std::vector<uint32_t> pixels(w*h);
+		
+		set_binary_io();
+		
+		while(1){
+			if(!read_blob(STDIN_FILENO, cbRaw, &raw[0]))
+				break;	// No more images
+			unpack_blob(w, h, bits, &raw[0], &pixels[0]);		
+			
+			process(levels, w, h, bits, pixels);
+			//invert(w, h, bits, pixels);
+			
+			pack_blob(w, h, bits, &pixels[0], &raw[0]);
+			write_blob(STDOUT_FILENO, cbRaw, &raw[0]);
+		}
+		
+		return 0;
+	}catch(std::exception &e){
+		std::cerr<<"Caught exception : "<<e.what()<<"\n";
+		return 1;
+	}
 }
 

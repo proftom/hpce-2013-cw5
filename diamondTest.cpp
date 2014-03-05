@@ -45,7 +45,7 @@ unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, int x, int y, unsig
 	////////////////////////////////
 	////     I      <-upper for loop starts here
 	////   I I I
-	//// I I O I I  <-upper for loop ends here
+	//// I I I.I I  <-upper for loop ends here
 	////   I I I    <-lower for loop starts
 	////     I      <-lower for loop finishes
 	///////////////////////////////
