@@ -4,22 +4,20 @@
 
 
 void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer, unsigned*);
-unsigned erode2(unsigned w, unsigned n, unsigned *ptrBuffer);
-unsigned dilate2(unsigned w, unsigned n, unsigned *ptrBuffer);
 
 using namespace std;
 int main() {
 	unsigned
-		n = 1,
+		n = 3,
 		w = 7,
 		h = 7,
 		maxValue = 0;
 
 	unsigned *output = (unsigned *)calloc(h*w, sizeof(unsigned));
-	unsigned pixelBufferSize = 49 + 15;//w * (2 * n) + 1;
+	unsigned pixelBufferSize = w*h + (2 * w*n + 1);//w * (2 * n) + 1;
 	unsigned *pixelBuffer = (unsigned*)calloc(pixelBufferSize, sizeof(unsigned));
 
-	for (int i = 0; i < 49; i++)
+	for (int i = 0; i < w*h; i++)
 		pixelBuffer[i] = i;
 
 	//We don't just want montonic data
@@ -27,6 +25,8 @@ int main() {
 	pixelBuffer[12] = 4;
 	pixelBuffer[13] = 4;
 	pixelBuffer[19] = 4;
+	pixelBuffer[7] = 5;
+	pixelBuffer[10] = 1;
 
 	//The shitty bit after the image (for cirulcar buffer)
 	for (int i = 49; i < 64; i++) {
@@ -54,39 +54,27 @@ unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, int x, int y, unsig
 	unsigned maxValue = 0;
 	unsigned inner = 0, outer = 0;
 
-	//int obs_x = x - n;
-	//int obs_y = y - n;
-
-	//for (int i = max(x-(int)n, 0); i < min(w, x + n); i++)
-	//{
-	//	inner++;
-	//	for (int j = max(y - (int)n, 0); j < min(h, y + n); j++)
-	//	{
-	//		outer++;
-	//	}
-	//}
-
 	//2n^2 + 2n comparisions
+
+	//Upper half of diamond
 	for (int i = 0; i <= n; i++) {
 
 		for (int j = -1 * i; j <= i; j++) {
+
 
 			if (x + j<0)
 			{
 				cout << x << " " << y << " outside of left bound\n\r";
 			}
-			if (x + j>(int)w - (int)n)
+			else if (x + j >= (int)w)
 			{
 				cout << x << " " << y << " outside of right bound\n\r";
 			}
-			if (y + i - (int)n< 0)
+			else if (y + i - (int)n< 0)
 			{
 				cout << x << " " << y << " outside of top bound\n\r";
 			}
-			//if (y + i - (int) n>(int)h - (int)n)
-			//{
-			//	cout << x << " " << y << " outside of bottom bound\n\r";
-			//}
+
 			else if (!(i == n && j == 0)) //Don't want the middle pixel
 			{
 				maxValue = std::max(ptrBuffer[i*w + j], maxValue);
@@ -94,11 +82,21 @@ unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, int x, int y, unsig
 
 		}
 	}
+
 	//Lower half of diamond
 	for (int i = 0; i < n; i++) {
 		for (int j = -1 * i; j <= i; j++) {
 
-			if (y + n + 1 + i - (int)n>(int)h - (int)n)
+
+			if (x + j<0)
+			{
+				cout << x << " " << y << " outside of left bound\n\r";
+			}
+			else if (x + j >= (int)w)
+			{
+				cout << x << " " << y << " outside of right bound\n\r";
+			}
+			else if (y + n + 1 - i >(int)h)
 			{
 				cout << x << " " << y << " outside of bottom bound\n\r";
 			}
@@ -107,8 +105,10 @@ unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, int x, int y, unsig
 			}
 		}
 	}
+
 	cout << "<<<<\n\r";
 	return maxValue;
+
 }
 
 
@@ -151,14 +151,15 @@ void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer, unsigned
 	for (pixelBufferPosition = 0; pixelBufferPosition < n*w + 1; pixelBufferPosition++)	//Inside the image area 
 		buffer[n*w + pixelBufferPosition] = pixelBuffer[pixelBufferPosition];
 
-	//Forwards	
+
+	//Forward (dilate)
 	int d = 0;
-	for (int j = 0; j < h /*- 2*n*/; j++)
+	for (int j = 0; j < h; j++)
 	{
-		for (int i = 0/*n*/; i < w /*- n*/; i++)
+		for (int i = 0; i < w; i++)
 		{
 			//output[j*(h - 2 * n) + i - n] = fwd(w, n, buffer);
-			output[j * w + i] = dilate(w, n, buffer, j, i, h);
+			output[j * w + i] = dilate(w, n, buffer, i, j, h);
 
 			//Update buffer - drop first element, add new element
 			//TODO: add circular buffer
@@ -172,14 +173,14 @@ void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer, unsigned
 	for (int i = 0; i < 49; i++)
 		cout << output[i] << " ";
 
-	//Backwards	
-	for (int j = 0; j < h - 2 * n; j++)
-	{
-		for (int i = n; i < w - n; i++)
-		{
-			//output[j*(h - 2 * n) + i - n] = rev(w, n, &pixelBuffer[j*w + i]);
-		}
-	}
+	////Backwards	
+	//for (int j = 0; j < h - 2*n; j++)
+	//{
+	//	for (int i = n; i < w - n; i++)
+	//	{
+	//		//output[j*(h - 2 * n) + i - n] = rev(w, n, &pixelBuffer[j*w + i]);
+	//	}
+	//}
 
 }
 
