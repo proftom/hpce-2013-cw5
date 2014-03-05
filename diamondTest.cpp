@@ -1,45 +1,10 @@
 
 #include <algorithm>
 #include <iostream>
+#include <vector>
+#include <cstdint>
 
-
-void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer, unsigned*);
-
-using namespace std;
-int main() {
-	unsigned
-		n = 3,
-		w = 7,
-		h = 7,
-		maxValue = 0;
-
-	unsigned *output = (unsigned *)calloc(h*w, sizeof(unsigned));
-	unsigned pixelBufferSize = w*h + (2 * w*n + 1);//w * (2 * n) + 1;
-	unsigned *pixelBuffer = (unsigned*)calloc(pixelBufferSize, sizeof(unsigned));
-
-	for (int i = 0; i < w*h; i++)
-		pixelBuffer[i] = i;
-
-	//We don't just want montonic data
-	pixelBuffer[5] = 4;
-	pixelBuffer[12] = 4;
-	pixelBuffer[13] = 4;
-	pixelBuffer[19] = 4;
-	pixelBuffer[7] = 5;
-	pixelBuffer[10] = 1;
-
-	//The shitty bit after the image (for cirulcar buffer)
-	for (int i = 49; i < 64; i++) {
-		pixelBuffer[i] = 0;
-	}
-
-	process(h, w, n, pixelBuffer, output);
-
-
-}
-
-
-unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, int x, int y, unsigned h) {
+uint32_t erode2(int w, int h, int n, uint32_t* ptrBuffer, int x, int y) {
 
 	////////////////////////////////
 	////////////////////////////////
@@ -51,136 +16,163 @@ unsigned dilate(unsigned w, unsigned n, unsigned *ptrBuffer, int x, int y, unsig
 	///////////////////////////////
 	///////////////////////////////
 
+	auto checkbounds = [=](int x, int y){
+		if (x<0)
+			std::cerr << x << " " << y << " outside of left bound\n\r";
+		if (x >= w)
+			std::cerr << x << " " << y << " outside of right bound\n\r";
+		if (y<0)
+			std::cerr << x << " " << y << " outside of top bound\n\r";
+		if (y >= h)
+			std::cerr << x << " " << y << " outside of bottom bound\n\r";
+	};
+
+	unsigned minValue = -1;
+
+	//Upper half and middle of diamond
+	int starty = std::max(y-n, 0);
+	int xwidth = n - (y-starty);
+	int xfirst = x - xwidth;
+	int xlast = x + xwidth;
+	for (int i = starty; i <= y; ++i)
+	{
+		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		{
+			minValue = std::min(ptrBuffer[i*w + j], minValue);
+			
+			#ifdef _DEBUG
+			checkbounds(j, i);
+			#endif
+		}
+		--xfirst;
+		++xlast;
+	}
+
+	// start shrinking x scan instead
+	xfirst += 2;
+	xlast -= 2;
+
+	// Lower half
+	for (int i = y+1; i <= std::min(y+n, h-1); ++i)
+	{
+		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		{
+			minValue = std::min(ptrBuffer[i*w + j], minValue);
+
+			#ifdef _DEBUG
+			checkbounds(j, i);
+			#endif
+		}
+		++xfirst;
+		--xlast;
+	}
+
+	return minValue;
+
+}
+
+uint32_t dilate2(int w, int h, int n, uint32_t* ptrBuffer, int x, int y) {
+
+	////////////////////////////////
+	////////////////////////////////
+	////     I      <-upper for loop starts here
+	////   I I I
+	//// I I I.I I  <-upper for loop ends here
+	////   I I I    <-lower for loop starts
+	////     I      <-lower for loop finishes
+	///////////////////////////////
+	///////////////////////////////
+
+	auto checkbounds = [=](int x, int y){
+		if (x<0)
+			std::cerr << x << " " << y << " outside of left bound\n\r";
+		if (x >= w)
+			std::cerr << x << " " << y << " outside of right bound\n\r";
+		if (y<0)
+			std::cerr << x << " " << y << " outside of top bound\n\r";
+		if (y >= h)
+			std::cerr << x << " " << y << " outside of bottom bound\n\r";
+	};
+
 	unsigned maxValue = 0;
-	unsigned inner = 0, outer = 0;
 
-	//2n^2 + 2n comparisions
-
-	//Upper half of diamond
-	for (int i = 0; i <= n; i++) {
-
-		for (int j = -1 * i; j <= i; j++) {
-
-
-			if (x + j<0)
-			{
-				cout << x << " " << y << " outside of left bound\n\r";
-			}
-			else if (x + j >= (int)w)
-			{
-				cout << x << " " << y << " outside of right bound\n\r";
-			}
-			else if (y + i - (int)n< 0)
-			{
-				cout << x << " " << y << " outside of top bound\n\r";
-			}
-
-			else if (!(i == n && j == 0)) //Don't want the middle pixel
-			{
-				maxValue = std::max(ptrBuffer[i*w + j], maxValue);
-			}
-
+	//Upper half and middle of diamond
+	int starty = std::max(y-n, 0);
+	int xwidth = n - (y-starty);
+	int xfirst = x - xwidth;
+	int xlast = x + xwidth;
+	for (int i = starty; i <= y; ++i)
+	{
+		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		{
+			maxValue = std::max(ptrBuffer[i*w + j], maxValue);
+			
+			#ifdef _DEBUG
+			checkbounds(j, i);
+			#endif
 		}
+		--xfirst;
+		++xlast;
 	}
 
-	//Lower half of diamond
-	for (int i = 0; i < n; i++) {
-		for (int j = -1 * i; j <= i; j++) {
+	// start shrinking x scan instead
+	xfirst += 2;
+	xlast -= 2;
 
+	// Lower half
+	for (int i = y+1; i <= std::min(y+n, h-1); ++i)
+	{
+		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		{
+			maxValue = std::max(ptrBuffer[i*w + j], maxValue);
 
-			if (x + j<0)
-			{
-				cout << x << " " << y << " outside of left bound\n\r";
-			}
-			else if (x + j >= (int)w)
-			{
-				cout << x << " " << y << " outside of right bound\n\r";
-			}
-			else if (y + n + 1 - i >(int)h)
-			{
-				cout << x << " " << y << " outside of bottom bound\n\r";
-			}
-			else {
-				maxValue = std::max(ptrBuffer[(2 * n - i)*w + j], maxValue);
-			}
+			#ifdef _DEBUG
+			checkbounds(j, i);
+			#endif
 		}
+		++xfirst;
+		--xlast;
 	}
 
-	cout << "<<<<\n\r";
 	return maxValue;
 
 }
 
-
-unsigned erode(unsigned w, unsigned n, unsigned *ptrBuffer) {
-
-	unsigned minValue = 999;
-	unsigned inner = 0, outer = 0;
-	//2n^2 + 2n comparisions
-	for (int i = 0; i <= n; i++) {
-		for (int j = -1 * i; j <= i; j++) {
-			//Don't want the middle pixel
-			if (!(i == n && j == 0)) {
-				minValue = std::min(ptrBuffer[i*w + j], minValue);
-			}
+void erode2full(unsigned w, unsigned h, int n, const std::vector<uint32_t> &input, std::vector<uint32_t> &output){
+	for (unsigned y = 0; y < h; ++y)
+	{
+		for (unsigned x = 0; x < w; ++x)
+		{
+			output[y*w + x] = erode2(w, h, n, (uint32_t*)input.data(), x, y);
 		}
 	}
-	//Check lower half of diamond
-	for (int i = 0; i < n; i++) {
-		for (int j = -1 * i; j <= i; j++) {
-			minValue = std::min(ptrBuffer[(2 * n - i)*w + j], minValue);
-		}
-	}
-	return minValue;
 }
 
-void process(unsigned h, unsigned w, unsigned n, unsigned *pixelBuffer, unsigned *output)
-{
-
-	//auto fwd = n < 0 ? erode : dilate;
-	//auto rev = n < 0 ? dilate : erode;
-
-	//Make a pixel buffer of length 2wn + 1
-	unsigned *buffer = (unsigned*)malloc((2 * (w*n) + 1)*sizeof(unsigned));
-
-	unsigned pixelBufferPosition = 0;
-
-	//Initialise the buffer
-	for (int i = 0; i < n*w; i++)	//Outside the image area
-		buffer[i] = 0;
-	for (pixelBufferPosition = 0; pixelBufferPosition < n*w + 1; pixelBufferPosition++)	//Inside the image area 
-		buffer[n*w + pixelBufferPosition] = pixelBuffer[pixelBufferPosition];
-
-
-	//Forward (dilate)
-	int d = 0;
-	for (int j = 0; j < h; j++)
+void dilate2full(unsigned w, unsigned h, int n, const std::vector<uint32_t> &input, std::vector<uint32_t> &output){
+	for (unsigned y = 0; y < h; ++y)
 	{
-		for (int i = 0; i < w; i++)
+		for (unsigned x = 0; x < w; ++x)
 		{
-			//output[j*(h - 2 * n) + i - n] = fwd(w, n, buffer);
-			output[j * w + i] = dilate(w, n, buffer, i, j, h);
-
-			//Update buffer - drop first element, add new element
-			//TODO: add circular buffer
-			for (int k = 0; k < 2 * w * n; k++)
-				buffer[k] = buffer[k + 1];
-			buffer[2 * w  * n] = pixelBuffer[pixelBufferPosition++];
-			d++;
+			output[y*w + x] = dilate2(w, h, n, (uint32_t*)input.data(), x, y);
 		}
 	}
+}
 
-	for (int i = 0; i < 49; i++)
-		cout << output[i] << " ";
+///////////////////////////////////////////////////////////////////
+// Composite image processing
 
-	////Backwards	
-	//for (int j = 0; j < h - 2*n; j++)
-	//{
-	//	for (int i = n; i < w - n; i++)
-	//	{
-	//		//output[j*(h - 2 * n) + i - n] = rev(w, n, &pixelBuffer[j*w + i]);
-	//	}
-	//}
-
+void process2(int levels, unsigned w, unsigned h, unsigned /*bits*/, std::vector<uint32_t> &pixels)
+{
+	std::vector<uint32_t> buffer(w*h);
+	
+	// Depending on whether levels is positive or negative,
+	// we flip the order round.
+	auto fwd=levels < 0 ? erode2full : dilate2full;
+	auto rev=levels < 0 ? dilate2full : erode2full;
+	
+	fwd(w, h, std::abs(levels), pixels, buffer);
+	std::swap(pixels, buffer);
+	rev(w, h, std::abs(levels), pixels, buffer);
+	std::swap(pixels, buffer);
 }
 

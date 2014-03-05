@@ -1,0 +1,5 @@
+build/
+*.raw
+*.png
+!input.raw
+!input.png

@@ -220,6 +220,7 @@ void set_binary_io()
 }
 #endif
 
+void process2(int levels, unsigned w, unsigned h, unsigned /*bits*/, std::vector<uint32_t> &pixels); //exists in diamondTest.cpp
 
 ////////////////////////////////////////////
 // Routines for bringing in binary images
@@ -447,6 +448,7 @@ void invert(unsigned w, unsigned h, unsigned bits, std::vector<uint32_t> &pixels
 
 int main(int argc, char *argv[])
 {
+
 	try{
 		if(argc<3){
 			fprintf(stderr, "Usage: process width height [bits] [levels]\n");
@@ -496,7 +498,8 @@ int main(int argc, char *argv[])
 				break;	// No more images
 			unpack_blob(w, h, bits, &raw[0], &pixels[0]);		
 			
-			process(levels, w, h, bits, pixels);
+			//process(levels, w, h, bits, pixels);
+			process2(levels, w, h, bits, pixels);
 			//invert(w, h, bits, pixels);
 			
 			pack_blob(w, h, bits, &pixels[0], &raw[0]);
