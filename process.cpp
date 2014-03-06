@@ -446,6 +446,158 @@ void invert(unsigned w, unsigned h, unsigned bits, std::vector<uint32_t> &pixels
 	}
 }
 
+
+
+
+
+
+uint32_t erode2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y) {
+
+	////////////////////////////////
+	////////////////////////////////
+	////     I      <-upper for loop starts here
+	////   I I I
+	//// I I I.I I  <-upper for loop ends here
+	////   I I I    <-lower for loop starts
+	////     I      <-lower for loop finishes
+	///////////////////////////////
+	///////////////////////////////
+
+	auto checkbounds = [=](int x, int y){
+		if (x<0)
+			std::cerr << x << " " << y << " outside of left bound\n\r";
+		if (x >= w)
+			std::cerr << x << " " << y << " outside of right bound\n\r";
+		if (y<0)
+			std::cerr << x << " " << y << " outside of top bound\n\r";
+		if (y >= h)
+			std::cerr << x << " " << y << " outside of bottom bound\n\r";
+	};
+
+	unsigned minValue = -1;
+
+	//Upper half and middle of diamond
+	int starty = std::max(y-n, 0);
+	int xwidth = n - (y-starty);
+	int xfirst = x - xwidth;
+	int xlast = x + xwidth;
+	for (int i = starty; i <= y; ++i)
+	{
+		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		{
+			minValue = std::min(ptrBuffer[(i*w + j) & mask], minValue);
+			
+			#ifdef _DEBUG
+			checkbounds(j, i);
+			#endif
+		}
+		--xfirst;
+		++xlast;
+	}
+
+	// start shrinking x scan instead
+	xfirst += 2;
+	xlast -= 2;
+
+	// Lower half
+	for (int i = y+1; i <= std::min(y+n, h-1); ++i)
+	{
+		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		{
+			minValue = std::min(ptrBuffer[(i*w + j) & mask], minValue);
+
+			#ifdef _DEBUG
+			checkbounds(j, i);
+			#endif
+		}
+		++xfirst;
+		--xlast;
+	}
+
+	return minValue;
+
+}
+
+uint32_t dilate2(int w, int h, int n, uint32_t* ptrBuffer, int x, int y) {
+
+	////////////////////////////////
+	////////////////////////////////
+	////     I      <-upper for loop starts here
+	////   I I I
+	//// I I I.I I  <-upper for loop ends here
+	////   I I I    <-lower for loop starts
+	////     I      <-lower for loop finishes
+	///////////////////////////////
+	///////////////////////////////
+
+	auto checkbounds = [=](int x, int y){
+		if (x<0)
+			std::cerr << x << " " << y << " outside of left bound\n\r";
+		if (x >= w)
+			std::cerr << x << " " << y << " outside of right bound\n\r";
+		if (y<0)
+			std::cerr << x << " " << y << " outside of top bound\n\r";
+		if (y >= h)
+			std::cerr << x << " " << y << " outside of bottom bound\n\r";
+	};
+
+	unsigned maxValue = 0;
+
+	//Upper half and middle of diamond
+	int starty = std::max(y-n, 0);
+	int xwidth = n - (y-starty);
+	int xfirst = x - xwidth;
+	int xlast = x + xwidth;
+	for (int i = starty; i <= y; ++i)
+	{
+		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		{
+			maxValue = std::max(ptrBuffer[i*w + j], maxValue);
+			
+			#ifdef _DEBUG
+			checkbounds(j, i);
+			#endif
+		}
+		--xfirst;
+		++xlast;
+	}
+
+	// start shrinking x scan instead
+	xfirst += 2;
+	xlast -= 2;
+
+	// Lower half
+	for (int i = y+1; i <= std::min(y+n, h-1); ++i)
+	{
+		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		{
+			maxValue = std::max(ptrBuffer[i*w + j], maxValue);
+
+			#ifdef _DEBUG
+			checkbounds(j, i);
+			#endif
+		}
+		++xfirst;
+		--xlast;
+	}
+
+	return maxValue;
+
+}
+
+//Algorithm from http://stackoverflow.com/a/1322548/1128910
+unsigned getnextpow2(unsigned n){
+	n--;
+	n |= n >> 1;   // Divide by 2^k for consecutive doublings of k up to 32,
+	n |= n >> 2;   // and then or the results.
+	n |= n >> 4;
+	n |= n >> 8;
+	n |= n >> 16;
+	n++;
+
+	return n;
+}
+
 int main(int argc, char *argv[])
 {
 
@@ -486,25 +638,88 @@ int main(int argc, char *argv[])
 		
 		fprintf(stderr, "Processing %d x %d image with %d bits per pixel.\n", w, h, bits);
 		
-		uint64_t cbRaw=uint64_t(w)*h*bits/8;
-		std::vector<uint64_t> raw(size_t(cbRaw/8));
-		
-		std::vector<uint32_t> pixels(w*h);
-		
 		set_binary_io();
+
+
+
+		//TODO: use std::bitset to represent the binary versions. It supports hardware counting of bits on SSE4.2
+
+		int N = std::abs(levels);
+		int chunksizeBytes = 1<<12;
+		int chunksizePix = chunksizeBytes*8/bits;
+		int maxdata = w*(2*N + 1) + chunksizePix;
+		int Cbuffsize = getnextpow2(maxdata);
+
+		std::vector<uint32_t> inpBuff(Cbuffsize);
+		int inpHeadidx = 0;
+		int inpTailidx = 0;
+		int wrapmask = Cbuffsize - 1;
+
+		std::vector<uint64_t> rawchunk(chunksizeBytes/8);
+
+
+		int lastreadpix = -1;
+
+		// While there are more images to process
+		while(1){
+
+			//fill prologue
+			for (; lastreadpix < (int)w*(2*N + 1) + 1; lastreadpix += chunksizePix)
+			{
+				read_blob(STDIN_FILENO, chunksizeBytes, &rawchunk[0]);
+				unpack_blob(chunksizePix, bits, &rawchunk[0], &inpBuff[inpHeadidx]);
+				inpHeadidx = (inpHeadidx + chunksizePix) & wrapmask;
+			}
+
+			std::vector<uint32_t> midBuff(Cbuffsize);
+			int midHeadidx = 0;
+			int midTailidx = 0;
+
+			bool EndOfFile = 0;
+
+			// 1st pass
+			int reqpix = w*(2*N + 1) + 1; //last pixel required by current computation
+			for (unsigned y = 0; y < h; ++y)
+			{
+				for (unsigned x = 0; x < w; ++x)
+				{
+					midBuff[(y*w + x) & wrapmask] = erode2(w, h, N, inpBuff.data(), wrapmask, x, y);
+
+					if (++reqpix > lastreadpix)
+					{
+						// (try to) read more pixels
+						EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, &rawchunk[0]);
+						unpack_blob(chunksizePix, bits, &rawchunk[0], &inpBuff[inpHeadidx]);
+						inpHeadidx = (inpHeadidx + chunksizePix) & wrapmask;
+						lastreadpix += chunksizePix;
+					}
+				}
+			}
+
+			if(EndOfFile)
+				break;
+
+			//We may have read some of next image's data, so compensate and continue
+			lastreadpix -= w*h;
+		}
+
+		while(1);
+
+#ifdef asdf
 		
 		while(1){
 			if(!read_blob(STDIN_FILENO, cbRaw, &raw[0]))
 				break;	// No more images
 			unpack_blob(w*h, bits, &raw[0], &pixels[0]);
 			
-			//process(levels, w, h, bits, pixels);
-			process2(levels, w, h, bits, pixels);
+			process(levels, w, h, bits, pixels);
 			//invert(w, h, bits, pixels);
 			
 			pack_blob(w*h, bits, &pixels[0], &raw[0]);
 			write_blob(STDOUT_FILENO, cbRaw, &raw[0]);
 		}
+
+#endif
 		
 		return 0;
 	}catch(std::exception &e){
