@@ -252,14 +252,14 @@ uint64_t shuffle64(unsigned bits, uint64_t x)
 }
 
 /*! Take data packed into incoming format, and exand to one integer per pixel */
-void unpack_blob(unsigned w, unsigned h, unsigned bits, const uint64_t *pRaw, uint32_t *pUnpacked)
+void unpack_blob(unsigned numpix, unsigned bits, const uint64_t *pRaw, uint32_t *pUnpacked)
 {
 	uint64_t buffer=0;
 	unsigned bufferedBits=0;
 	
 	const uint64_t MASK=0xFFFFFFFFFFFFFFFFULL>>(64-bits);
 	
-	for(unsigned i=0;i<w*h;i++){
+	for(unsigned i=0;i<numpix;i++){
 		if(bufferedBits==0){
 			buffer=shuffle64(bits, *pRaw++);
 			bufferedBits=64;
@@ -274,14 +274,14 @@ void unpack_blob(unsigned w, unsigned h, unsigned bits, const uint64_t *pRaw, ui
 }
 
 /*! Go back from one integer per pixel to packed format for output. */
-void pack_blob(unsigned w, unsigned h, unsigned bits, const uint32_t *pUnpacked, uint64_t *pRaw)
+void pack_blob(unsigned numpix, unsigned bits, const uint32_t *pUnpacked, uint64_t *pRaw)
 {
 	uint64_t buffer=0;
 	unsigned bufferedBits=0;
 	
 	const uint64_t MASK=0xFFFFFFFFFFFFFFFFULL>>(64-bits);
 	
-	for(unsigned i=0;i<w*h;i++){
+	for(unsigned i=0;i<numpix;i++){
 		buffer=buffer | (uint64_t(pUnpacked[i]&MASK)<< bufferedBits);
 		bufferedBits+=bits;
 		
@@ -496,13 +496,13 @@ int main(int argc, char *argv[])
 		while(1){
 			if(!read_blob(STDIN_FILENO, cbRaw, &raw[0]))
 				break;	// No more images
-			unpack_blob(w, h, bits, &raw[0], &pixels[0]);		
+			unpack_blob(w*h, bits, &raw[0], &pixels[0]);
 			
 			//process(levels, w, h, bits, pixels);
 			process2(levels, w, h, bits, pixels);
 			//invert(w, h, bits, pixels);
 			
-			pack_blob(w, h, bits, &pixels[0], &raw[0]);
+			pack_blob(w*h, bits, &pixels[0], &raw[0]);
 			write_blob(STDOUT_FILENO, cbRaw, &raw[0]);
 		}
 		
