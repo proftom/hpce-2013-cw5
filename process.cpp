@@ -295,16 +295,17 @@ void pack_blob(unsigned numpix, unsigned bits, const uint32_t *pUnpacked, uint64
 	assert(bufferedBits==0);
 }
 
-bool read_blob(int fd, uint64_t cbBlob, void *pBlob)
+// returns false if encountered EOF within requested segment
+bool read_blob(int fd, uint64_t cbBlob, uint64_t &done, void *pBlob)
 {
 	uint8_t *pBytes=(uint8_t*)pBlob;
 	
-	uint64_t done=0;
+	done=0;
 	while(done<cbBlob){
 		int todo=(int)std::min(uint64_t(1)<<30, cbBlob-done);		
 		
 		int got=read(fd, pBytes+done, todo);
-		if(got==0 && done==0)
+		if(got==0)
 			return false;	// end of file
 		if(got<=0){
 			throw std::invalid_argument("Read failure.");
@@ -518,7 +519,7 @@ uint32_t erode2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y
 
 }
 
-uint32_t dilate2(int w, int h, int n, uint32_t* ptrBuffer, int x, int y) {
+uint32_t dilate2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y) {
 
 	////////////////////////////////
 	////////////////////////////////
@@ -552,7 +553,7 @@ uint32_t dilate2(int w, int h, int n, uint32_t* ptrBuffer, int x, int y) {
 	{
 		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
 		{
-			maxValue = std::max(ptrBuffer[i*w + j], maxValue);
+			maxValue = std::max(ptrBuffer[(i*w + j) & mask], maxValue);
 			
 			#ifdef _DEBUG
 			checkbounds(j, i);
@@ -571,7 +572,7 @@ uint32_t dilate2(int w, int h, int n, uint32_t* ptrBuffer, int x, int y) {
 	{
 		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
 		{
-			maxValue = std::max(ptrBuffer[i*w + j], maxValue);
+			maxValue = std::max(ptrBuffer[(i*w + j) & mask], maxValue);
 
 			#ifdef _DEBUG
 			checkbounds(j, i);
@@ -646,80 +647,131 @@ int main(int argc, char *argv[])
 
 		int N = std::abs(levels);
 		int chunksizeBytes = 1<<12;
+		//int chunksizeBytes = 8;
 		int chunksizePix = chunksizeBytes*8/bits;
 		int maxdata = w*(2*N + 1) + chunksizePix;
 		int Cbuffsize = getnextpow2(maxdata);
 
 		std::vector<uint32_t> inpBuff(Cbuffsize);
 		int inpHeadidx = 0;
-		int inpTailidx = 0;
 		int wrapmask = Cbuffsize - 1;
+
+		std::vector<uint32_t> midBuff(Cbuffsize);
+		int midHeadidx = 0;
+
+		std::vector<uint32_t> outBuff(chunksizePix);
+		int outHeadidx = 0;
+		int wrapmaskout = chunksizePix - 1;
 
 		std::vector<uint64_t> rawchunk(chunksizeBytes/8);
 
-
+		// Depending on whether levels is positive or negative,
+		// we flip the order round.
+		auto fwd=levels < 0 ? erode2 : dilate2;
+		auto rev=levels < 0 ? dilate2 : erode2;
+	
 		int lastreadpix = -1;
+		int reqpixFwd = w*N; //last pixel required by current computation
+		int lastfwdpix = -1;
+		int reqpixRev = w*N;
+		int lastrevpix = -1;
+		int lastwritepix = -1;
+
+		bool EndOfFile = 0;
+
+		int y1 = 0;
+		int x1 = 0;
+		int y2 = 0;
+		int x2 = 0;
 
 		// While there are more images to process
 		while(1){
 
-			//fill prologue
-			for (; lastreadpix < (int)w*(2*N + 1) + 1; lastreadpix += chunksizePix)
-			{
-				read_blob(STDIN_FILENO, chunksizeBytes, &rawchunk[0]);
-				unpack_blob(chunksizePix, bits, &rawchunk[0], &inpBuff[inpHeadidx]);
-				inpHeadidx = (inpHeadidx + chunksizePix) & wrapmask;
-			}
+			// The great pipeline.
+			// When the input stream ends, the early stages will operate on invalid data.
+			// This is fine as it does not affect the output
+			while (1){
 
-			std::vector<uint32_t> midBuff(Cbuffsize);
-			int midHeadidx = 0;
-			int midTailidx = 0;
-
-			bool EndOfFile = 0;
-
-			// 1st pass
-			int reqpix = w*(2*N + 1) + 1; //last pixel required by current computation
-			for (unsigned y = 0; y < h; ++y)
-			{
-				for (unsigned x = 0; x < w; ++x)
+				// Should run
+				while (reqpixFwd > lastreadpix) 
 				{
-					midBuff[(y*w + x) & wrapmask] = erode2(w, h, N, inpBuff.data(), wrapmask, x, y);
+					uint64_t bytesread;
+					EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
+					//int numpixread = EndOfFile ? bytesread*8/bits : chunksizePix;
+					int numpixread = chunksizePix; //we pretend we kept reading, to make the check easier for next stages.
 
-					if (++reqpix > lastreadpix)
+					unpack_blob(numpixread, bits, &rawchunk[0], (uint32_t*)&inpBuff[inpHeadidx]);
+					inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
+					lastreadpix += numpixread;
+				}
+
+				//fprintf(stderr, "lastreadpix: %#010x\t inpHeadidx: %#010x\n", lastreadpix, inpHeadidx);
+
+				// Can run
+				while (lastreadpix >= reqpixFwd)
+				{
+					midBuff[midHeadidx] = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
+					midHeadidx = (midHeadidx + 1) & wrapmask;
+					if(++x1 >= (int)w) {
+						x1 = 0;
+						if(++y1 >= (int)h){ //y overflow means we are on next image.
+							y1 = 0;
+						}
+					}
+					++lastfwdpix;
+					++reqpixFwd;
+				}
+
+				//fprintf(stderr, "lastfwdpix: %#010x\t midHeadidx: %#010x\t reqpixFwd: %#010x\n", lastfwdpix, inpHeadidx, reqpixFwd);
+
+				// Can run
+				while (lastfwdpix >= reqpixRev)
+				{
+					outBuff[outHeadidx] = rev(w, h, N, midBuff.data(), wrapmask, x2, y2);
+					outHeadidx = (outHeadidx + 1) & wrapmaskout;
+					if(++x2 >= (int)w) {
+						x2 = 0;
+						if(++y2 >= (int)h){ //y overflow means we are on next image.
+							y2 = 0;
+						}
+					}
+					++lastrevpix;
+					++reqpixRev;
+				}
+
+				//fprintf(stderr, "lastrevpix: %#010x\t outHeadidx: %#010x\t reqpixRev: %#010x\n", lastrevpix, outHeadidx, reqpixRev);
+
+				if (lastrevpix >= lastwritepix + chunksizePix)
+				{
+					assert(outHeadidx == 0);
+
+					// if a regular chunksize write would over-write to output
+					if (EndOfFile && lastwritepix + chunksizePix >= w*h)
 					{
-						// (try to) read more pixels
-						EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, &rawchunk[0]);
-						unpack_blob(chunksizePix, bits, &rawchunk[0], &inpBuff[inpHeadidx]);
-						inpHeadidx = (inpHeadidx + chunksizePix) & wrapmask;
-						lastreadpix += chunksizePix;
+						int pixleft = (w*h - 1) - lastwritepix;
+						pack_blob(pixleft, bits, &midBuff[0], &rawchunk[0]);
+						write_blob(STDOUT_FILENO, pixleft, &rawchunk[0]);
+						break;
+					} else {
+						pack_blob(chunksizePix, bits, &midBuff[0], &rawchunk[0]);
+						write_blob(STDOUT_FILENO, chunksizeBytes, &rawchunk[0]);
+						lastwritepix += chunksizePix;
 					}
 				}
+
+				//fprintf(stderr, "\n");
+				
 			}
 
 			if(EndOfFile)
 				break;
 
-			//We may have read some of next image's data, so compensate and continue
+			//We may have processed some some of next image's data, so compensate and continue
 			lastreadpix -= w*h;
+			reqpixFwd -= w*h;
+			lastfwdpix -= w*h;
+			lastrevpix -= w*h;
 		}
-
-		while(1);
-
-#ifdef asdf
-		
-		while(1){
-			if(!read_blob(STDIN_FILENO, cbRaw, &raw[0]))
-				break;	// No more images
-			unpack_blob(w*h, bits, &raw[0], &pixels[0]);
-			
-			process(levels, w, h, bits, pixels);
-			//invert(w, h, bits, pixels);
-			
-			pack_blob(w*h, bits, &pixels[0], &raw[0]);
-			write_blob(STDOUT_FILENO, cbRaw, &raw[0]);
-		}
-
-#endif
 		
 		return 0;
 	}catch(std::exception &e){
