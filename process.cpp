@@ -749,11 +749,11 @@ int main(int argc, char *argv[])
 					if (EndOfFile && lastwritepix + chunksizePix >= w*h)
 					{
 						int pixleft = (w*h - 1) - lastwritepix;
-						pack_blob(pixleft, bits, &midBuff[0], &rawchunk[0]);
+						pack_blob(pixleft, bits, &outBuff[0], &rawchunk[0]);
 						write_blob(STDOUT_FILENO, pixleft, &rawchunk[0]);
 						break;
 					} else {
-						pack_blob(chunksizePix, bits, &midBuff[0], &rawchunk[0]);
+						pack_blob(chunksizePix, bits, &outBuff[0], &rawchunk[0]);
 						write_blob(STDOUT_FILENO, chunksizeBytes, &rawchunk[0]);
 						lastwritepix += chunksizePix;
 					}
