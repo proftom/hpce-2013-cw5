@@ -6,6 +6,26 @@
 #include <iostream>
 #include <string>
 #include <cstdint>
+#include "task_group.h"
+#include "parallel_for.h"
+#include <iostream>
+#include <chrono>
+
+class Timer
+{
+public:
+	Timer() : beg_(clock_::now()) {}
+	void reset() { beg_ = clock_::now(); }
+	double elapsed() const {
+		return std::chrono::duration_cast<second_>
+			(clock_::now() - beg_).count();
+	}
+
+private:
+	typedef std::chrono::high_resolution_clock clock_;
+	typedef std::chrono::duration<double, std::ratio<1> > second_;
+	std::chrono::time_point<clock_> beg_;
+};
 
 /*
 This is a program for performing morphological operations in gray-scale
@@ -599,46 +619,57 @@ unsigned getnextpow2(unsigned n){
 	return n;
 }
 
+
+struct dataChunk {
+
+	std::vector<uint32_t> *buffer;
+
+	dataChunk(int chunksizeBytes) {
+		buffer = new std::vector<uint32_t>(chunksizeBytes / 8);
+	}
+
+};
+
 int main(int argc, char *argv[])
 {
 
 	try{
-		if(argc<3){
+		if (argc < 3){
 			fprintf(stderr, "Usage: process width height [bits] [levels]\n");
 			fprintf(stderr, "   bits=8 by default\n");
 			fprintf(stderr, "   levels=1 by default\n");
 			exit(1);
 		}
-		
-		unsigned w=atoi(argv[1]);
-		unsigned h=atoi(argv[2]);
-		
-		unsigned bits=8;
-		if(argc>3){
-			bits=atoi(argv[3]);
+
+		unsigned w = atoi(argv[1]);
+		unsigned h = atoi(argv[2]);
+
+		unsigned bits = 8;
+		if (argc > 3){
+			bits = atoi(argv[3]);
 		}
-		
-		if(bits>32)
+
+		if (bits > 32)
 			throw std::invalid_argument("Bits must be <= 32.");
-		
-		unsigned tmp=bits;
-		while(tmp!=1){
-			tmp>>=1;
-			if(tmp==0)
+
+		unsigned tmp = bits;
+		while (tmp != 1){
+			tmp >>= 1;
+			if (tmp == 0)
 				throw std::invalid_argument("Bits must be a binary power.");
 		}
-		
-		if( ((w*bits)%64) != 0){
+
+		if (((w*bits) % 64) != 0){
 			throw std::invalid_argument(" width*bits must be divisible by 64.");
 		}
-		
-		int levels=1;
-		if(argc>4){
-			levels=atoi(argv[4]);
+
+		int levels = 1;
+		if (argc > 4){
+			levels = atoi(argv[4]);
 		}
-		
+
 		fprintf(stderr, "Processing %d x %d image with %d bits per pixel.\n", w, h, bits);
-		
+
 		set_binary_io();
 
 
@@ -646,10 +677,10 @@ int main(int argc, char *argv[])
 		//TODO: use std::bitset to represent the binary versions. It supports hardware counting of bits on SSE4.2
 
 		int N = std::abs(levels);
-		int chunksizeBytes = 1<<12;
+		int chunksizeBytes = 1 << 12;
 		//int chunksizeBytes = 8;
-		int chunksizePix = chunksizeBytes*8/bits;
-		int maxdata = w*(2*N + 1) + chunksizePix;
+		int chunksizePix = chunksizeBytes * 8 / bits;
+		int maxdata = w*(2 * N + 1) + chunksizePix;
 		int Cbuffsize = getnextpow2(maxdata);
 
 		std::vector<uint32_t> inpBuff(Cbuffsize);
@@ -663,13 +694,13 @@ int main(int argc, char *argv[])
 		int outHeadidx = 0;
 		int wrapmaskout = chunksizePix - 1;
 
-		std::vector<uint64_t> rawchunk(chunksizeBytes/8);
+		std::vector<uint64_t> rawchunk(chunksizeBytes / 8);
 
 		// Depending on whether levels is positive or negative,
 		// we flip the order round.
-		auto fwd=levels < 0 ? erode2 : dilate2;
-		auto rev=levels < 0 ? dilate2 : erode2;
-	
+		auto fwd = levels < 0 ? erode2 : dilate2;
+		auto rev = levels < 0 ? dilate2 : erode2;
+
 		int lastreadpix = -1;
 		int reqpixFwd = w*N; //last pixel required by current computation
 		int lastfwdpix = -1;
@@ -684,6 +715,47 @@ int main(int argc, char *argv[])
 		int y2 = 0;
 		int x2 = 0;
 
+		bool bReadCanRun = true;
+		bool bReadShouldRun = true;
+
+		bool bFwdCanRun = false;
+		bool bFwdShouldRun = false;
+
+		bool bRevCanRun = false;
+		bool bRevShouldRun = false;
+
+		bool bWriteCanRun = false;
+		bool bWriteShouldRun = false;
+
+		tbb::task_group group;
+
+		int produce = 0;
+		int consume = 0;
+
+		int produce2 = 0;
+		int consume2 = 0;
+		//Reading data into pipeline
+		auto readData = [&]() {
+			while (1) {
+				while (reqpixFwd > lastreadpix && produce - consume < Cbuffsize - w*(2 * N + 1))
+			{
+				uint64_t bytesread;
+				EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
+				//int numpixread = EndOfFile ? bytesread*8/bits : chunksizePix;
+				int numpixread = chunksizePix; //we pretend we kept reading, to make the check easier for next stages.
+
+				unpack_blob(numpixread, bits, &rawchunk[0], (uint32_t*)&inpBuff[inpHeadidx]);
+				inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
+				produce += chunksizePix;
+				lastreadpix += numpixread;
+			}
+			}
+		};
+		Timer tmr;
+		double t = tmr.elapsed();
+		group.run(readData);
+
+
 		// While there are more images to process
 		while(1){
 
@@ -693,17 +765,10 @@ int main(int argc, char *argv[])
 			while (1){
 
 				// Should run
-				while (reqpixFwd > lastreadpix) 
-				{
-					uint64_t bytesread;
-					EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
-					//int numpixread = EndOfFile ? bytesread*8/bits : chunksizePix;
-					int numpixread = chunksizePix; //we pretend we kept reading, to make the check easier for next stages.
+				//readData;
 
-					unpack_blob(numpixread, bits, &rawchunk[0], (uint32_t*)&inpBuff[inpHeadidx]);
-					inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
-					lastreadpix += numpixread;
-				}
+				//bReadCanRun = false;
+				//bFwdCanRun = true;
 
 				//fprintf(stderr, "lastreadpix: %#010x\t inpHeadidx: %#010x\n", lastreadpix, inpHeadidx);
 
@@ -711,6 +776,8 @@ int main(int argc, char *argv[])
 				while (lastreadpix >= reqpixFwd)
 				{
 					midBuff[midHeadidx] = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
+					consume++;
+					produce2++;
 					midHeadidx = (midHeadidx + 1) & wrapmask;
 					if(++x1 >= (int)w) {
 						x1 = 0;
@@ -721,14 +788,17 @@ int main(int argc, char *argv[])
 					++lastfwdpix;
 					++reqpixFwd;
 				}
+				//bFwdCanRun = false;
+				//bRevCanRun = true;
 
 				//fprintf(stderr, "lastfwdpix: %#010x\t midHeadidx: %#010x\t reqpixFwd: %#010x\n", lastfwdpix, inpHeadidx, reqpixFwd);
 
 				// Can run
-				while (lastfwdpix >= reqpixRev)
+				while (lastfwdpix >= reqpixRev && produce2 - consume2 > 0)
 				{
 					outBuff[outHeadidx] = rev(w, h, N, midBuff.data(), wrapmask, x2, y2);
 					outHeadidx = (outHeadidx + 1) & wrapmaskout;
+					consume2++;
 					if(++x2 >= (int)w) {
 						x2 = 0;
 						if(++y2 >= (int)h){ //y overflow means we are on next image.
@@ -738,10 +808,12 @@ int main(int argc, char *argv[])
 					++lastrevpix;
 					++reqpixRev;
 				}
+				bRevCanRun = false;
+				bWriteCanRun = true;
 
 				//fprintf(stderr, "lastrevpix: %#010x\t outHeadidx: %#010x\t reqpixRev: %#010x\n", lastrevpix, outHeadidx, reqpixRev);
 
-				if (lastrevpix >= lastwritepix + chunksizePix)
+				if (lastrevpix >= lastwritepix + chunksizePix && bWriteCanRun)
 				{
 					assert(outHeadidx == 0);
 
@@ -758,6 +830,8 @@ int main(int argc, char *argv[])
 						lastwritepix += chunksizePix;
 					}
 				}
+				bWriteCanRun = false;
+				bFwdCanRun = true;
 
 				//fprintf(stderr, "\n");
 				
@@ -772,6 +846,10 @@ int main(int argc, char *argv[])
 			lastfwdpix -= w*h;
 			lastrevpix -= w*h;
 		}
+		
+		double t2 = tmr.elapsed();
+
+		//group.cancel();
 		
 		return 0;
 	}catch(std::exception &e){
