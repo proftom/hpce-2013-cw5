@@ -852,6 +852,9 @@ int main(int argc, char *argv[])
 		std::vector<uint32_t> midBuff(Cbuffsize);
 		int midHeadidx = 0;
 
+		std::vector<uint32_t> tomBuff(w*h*2);
+		int tomHeadidx = 0;
+
 		std::vector<uint32_t> outBuff(chunksizePix);
 		int outHeadidx = 0;
 		int wrapmaskout = chunksizePix - 1;
@@ -903,8 +906,10 @@ int main(int argc, char *argv[])
 			while (1){
 
 				// Should run
-				while (reqpixFwd > lastreadpix) 
+				//We should load as much data into the buffer as possible, which is the currently required forward pixel + sizeOfBuffer - chunk size
+				while (/*reqpixFwd > lastreadpix*/  lastreadpix - reqpixFwd + (int)w*N <  Cbuffsize - chunksizeBytes)
 				{
+					fprintf(stderr, "reading\n");
 					uint64_t bytesread;
 					EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
 					//int numpixread = EndOfFile ? bytesread*8/bits : chunksizePix;
@@ -920,7 +925,7 @@ int main(int argc, char *argv[])
 				// Can run
 				while (lastreadpix >= reqpixFwd)
 				{
-
+					//fprintf(stderr, "fwd\n");
 					uint32_t fwdVal = fwd3(w, h, N, inpBuff.data(), wrapmask, x1, y1, fwdwindows);
 #ifdef _DEBUG
 					uint32_t refval = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
@@ -928,6 +933,8 @@ int main(int argc, char *argv[])
 #endif
 					
 					midBuff[midHeadidx & wrapmask] = fwdVal;
+					tomBuff[tomHeadidx++] = fwdVal;
+					
 					++midHeadidx;
 					if(++x1 >= (int)w) {
 						x1 = 0;
@@ -964,8 +971,9 @@ int main(int argc, char *argv[])
 
 				//fprintf(stderr, "lastrevpix: %#010x\t outHeadidx: %#010x\t reqpixRev: %#010x\n", lastrevpix, outHeadidx, reqpixRev);
 
-				if (lastrevpix >= lastwritepix + chunksizePix)
+				while (lastrevpix >= lastwritepix + chunksizePix)
 				{
+					fprintf(stderr, "writing\n");
 					assert(outHeadidx == 0);
 
 					// if a regular chunksize write would over-write to output
