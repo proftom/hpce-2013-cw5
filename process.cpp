@@ -751,10 +751,32 @@ int main(int argc, char *argv[])
 			}
 			}
 		};
+
+		auto fowardPass = [&]() {
+			while (1) {
+				while (lastreadpix >= reqpixFwd  && produce2 - consume2 < Cbuffsize - w*N)
+				{
+					midBuff[midHeadidx] = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
+					consume++;
+					produce2++;
+					midHeadidx = (midHeadidx + 1) & wrapmask;
+					if (++x1 >= (int)w) {
+						x1 = 0;
+						if (++y1 >= (int)h){ //y overflow means we are on next image.
+							y1 = 0;
+						}
+					}
+					++lastfwdpix;
+					++reqpixFwd;
+				}
+			}
+		};
+		 
+
 		Timer tmr;
 		double t = tmr.elapsed();
 		group.run(readData);
-
+		group.run(fowardPass);
 
 		// While there are more images to process
 		while(1){
@@ -773,28 +795,15 @@ int main(int argc, char *argv[])
 				//fprintf(stderr, "lastreadpix: %#010x\t inpHeadidx: %#010x\n", lastreadpix, inpHeadidx);
 
 				// Can run
-				while (lastreadpix >= reqpixFwd)
-				{
-					midBuff[midHeadidx] = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
-					consume++;
-					produce2++;
-					midHeadidx = (midHeadidx + 1) & wrapmask;
-					if(++x1 >= (int)w) {
-						x1 = 0;
-						if(++y1 >= (int)h){ //y overflow means we are on next image.
-							y1 = 0;
-						}
-					}
-					++lastfwdpix;
-					++reqpixFwd;
-				}
+
 				//bFwdCanRun = false;
 				//bRevCanRun = true;
 
 				//fprintf(stderr, "lastfwdpix: %#010x\t midHeadidx: %#010x\t reqpixFwd: %#010x\n", lastfwdpix, inpHeadidx, reqpixFwd);
 
 				// Can run
-				while (lastfwdpix >= reqpixRev && produce2 - consume2 > 0)
+				//lastfwdpix
+				while (lastfwdpix >= reqpixRev)
 				{
 					outBuff[outHeadidx] = rev(w, h, N, midBuff.data(), wrapmask, x2, y2);
 					outHeadidx = (outHeadidx + 1) & wrapmaskout;
@@ -815,7 +824,7 @@ int main(int argc, char *argv[])
 
 				if (lastrevpix >= lastwritepix + chunksizePix && bWriteCanRun)
 				{
-					assert(outHeadidx == 0);
+					//assert(outHeadidx == 0);
 
 					// if a regular chunksize write would over-write to output
 					if (EndOfFile && lastwritepix + chunksizePix >= w*h)
