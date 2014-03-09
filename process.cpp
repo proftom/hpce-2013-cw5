@@ -447,11 +447,6 @@ void invert(unsigned w, unsigned h, unsigned bits, std::vector<uint32_t> &pixels
 	}
 }
 
-
-
-
-
-
 uint32_t erode2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y) {
 
 	////////////////////////////////
@@ -586,6 +581,182 @@ uint32_t dilate2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int 
 
 }
 
+//Algorithm inspired by http://leetcode.com/2011/01/sliding-window-maximum.html
+// and http://people.cs.uct.ac.za/~ksmith/articles/sliding_window_minimum.html#sliding-window-minimum-algorithm
+
+template <class T> 
+class minmaxSlidingWindow
+{
+private:
+	// Using a circular buffer with the "leave one space empty" full vs empty destinction strategy
+	std::vector<std::pair<int, T>> Q;
+	int headidx;
+	int tailidx;
+	int buffsize; //we actually allocate buffsize+1
+	bool computemax;
+
+	int wrap(int idx){
+		if (idx < 0)
+			return buffsize;
+		else
+			return idx>buffsize ? 0 : idx;
+	}
+
+	 //less_equal for min, greater_equal for max
+	bool comp(T a, T b){
+		return computemax ? (a >= b) : (a <= b);
+	}
+public:
+	minmaxSlidingWindow(int win, bool computemaxin)
+	: Q(win+1), headidx(0), tailidx(0), buffsize(win), computemax(computemaxin)
+	{}
+
+	//windowhead is standard algo idx, windowtail is usually idx-windowsize except at edges
+
+	T push(int windowhead, T val){
+		while(headidx != tailidx && comp(val, Q[wrap(headidx-1)].second))
+			headidx = wrap(--headidx);
+		
+		Q[headidx] = std::make_pair(windowhead, val);
+		headidx = wrap(++headidx);
+
+		return Q[tailidx].second;
+	}
+
+	T pushpop(int windowhead, int windowtail, T val){
+		while(headidx != tailidx && comp(val, Q[wrap(headidx-1)].second))
+			headidx = wrap(--headidx);
+		while(headidx != tailidx && Q[tailidx].first <= windowtail)
+			tailidx = wrap(++tailidx);
+
+		Q[headidx] = std::make_pair(windowhead, val);
+		headidx = wrap(++headidx);
+
+		return Q[tailidx].second;
+	}
+
+	T pop(int windowtail){
+		while(headidx != tailidx && Q[tailidx].first <= windowtail)
+			tailidx = wrap(++tailidx);
+
+		return Q[tailidx].second;
+	}
+
+	T current(){
+		return Q[tailidx].second;
+	}
+
+	void reset(){
+		headidx = 0;
+		tailidx = 0;
+	}
+	
+};
+
+uint32_t dilate3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, std::vector<minmaxSlidingWindow<uint32_t>> &maxslideWindows){
+	int starty = std::max(y-n, 0);
+	int xwidth = n - (y-starty);
+	int xfirst = x - xwidth;
+	int xlast = x + xwidth;
+	int offset = y-n;
+	uint32_t maxVal = 0;
+
+	if (x == 0)
+	{
+		for (int i = starty; i <= std::min(y+n, (int)h-1); ++i)
+		{
+			maxslideWindows[i - offset].reset();
+			for (int j = 0; j <= xlast; ++j)
+			{
+				maxslideWindows[i - offset].push(j, ptrBuffer[(i*w + j) & mask]);
+			}
+			maxVal = std::max(maxVal, maxslideWindows[i - offset].current());
+		}
+	} else {
+		//Upper half and middle of diamond
+		for (int i = starty; i <= y; ++i)
+		{
+			if (xlast >= (int)w) {
+				maxVal = std::max(maxVal, maxslideWindows[i - offset].pop(xfirst-1));
+			} else {
+				maxVal = std::max(maxVal, maxslideWindows[i - offset].pushpop(xlast, xfirst-1, ptrBuffer[(i*w + xlast) & mask]));
+			}
+			--xfirst;
+			++xlast;
+		}
+
+		// start shrinking x scan instead
+		xfirst += 2;
+		xlast -= 2;
+
+		// Lower half
+		for (int i = y+1; i <= std::min(y+n, (int)h-1); ++i)
+		{
+			if (xlast >= (int)w) {
+				maxVal = std::max(maxVal, maxslideWindows[i - offset].pop(xfirst-1));
+			} else {
+				maxVal = std::max(maxVal, maxslideWindows[i - offset].pushpop(xlast, xfirst-1, ptrBuffer[(i*w + xlast) & mask]));
+			}
+			++xfirst;
+			--xlast;
+		}
+	}
+
+	return maxVal;
+}
+
+uint32_t erode3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, std::vector<minmaxSlidingWindow<uint32_t>> &minslideWindows){
+	int starty = std::max(y-n, 0);
+	int xwidth = n - (y-starty);
+	int xfirst = x - xwidth;
+	int xlast = x + xwidth;
+	int offset = y-n;
+	uint32_t minVal = -1;
+
+	if (x == 0)
+	{
+		for (int i = starty; i <= std::min(y+n, (int)h-1); ++i)
+		{
+			minslideWindows[i - offset].reset();
+			for (int j = 0; j <= xlast; ++j)
+			{
+				minslideWindows[i - offset].push(j, ptrBuffer[(i*w + j) & mask]);
+			}
+			minVal = std::min(minVal, minslideWindows[i - offset].current());
+		}
+	} else {
+		//Upper half and middle of diamond
+		for (int i = starty; i <= y; ++i)
+		{
+			if (xlast >= (int)w) {
+				minVal = std::min(minVal, minslideWindows[i - offset].pop(xfirst-1));
+			} else {
+				minVal = std::min(minVal, minslideWindows[i - offset].pushpop(xlast, xfirst-1, ptrBuffer[(i*w + xlast) & mask]));
+			}
+			--xfirst;
+			++xlast;
+		}
+
+		// start shrinking x scan instead
+		xfirst += 2;
+		xlast -= 2;
+
+		// Lower half
+		for (int i = y+1; i <= std::min(y+n, (int)h-1); ++i)
+		{
+			if (xlast >= (int)w) {
+				minVal = std::min(minVal, minslideWindows[i - offset].pop(xfirst-1));
+			} else {
+				minVal = std::min(minVal, minslideWindows[i - offset].pushpop(xlast, xfirst-1, ptrBuffer[(i*w + xlast) & mask]));
+			}
+			++xfirst;
+			--xlast;
+		}
+	}
+
+	return minVal;
+}
+
 //Algorithm from http://stackoverflow.com/a/1322548/1128910
 unsigned getnextpow2(unsigned n){
 	n--;
@@ -684,6 +855,23 @@ int main(int argc, char *argv[])
 		int y2 = 0;
 		int x2 = 0;
 
+
+		std::vector<minmaxSlidingWindow<uint32_t>> minslideWindows;
+		minslideWindows.reserve(2*N + 1);
+		for (int i = 0; i < 2*N + 1; ++i)
+			minslideWindows.push_back(minmaxSlidingWindow<uint32_t>(2*N+1, false));
+
+		std::vector<minmaxSlidingWindow<uint32_t>> maxslideWindows;
+		maxslideWindows.reserve(2*N + 1);
+		for (int i = 0; i < 2*N + 1; ++i)
+			maxslideWindows.push_back(minmaxSlidingWindow<uint32_t>(2*N+1, true));
+
+		auto fwdwindows = levels < 0 ? minslideWindows : maxslideWindows;
+		auto revwindows = levels < 0 ? maxslideWindows : minslideWindows;
+
+		auto fwd3=levels < 0 ? erode3 : dilate3;
+		auto rev3=levels < 0 ? dilate3 : erode3;
+
 		// While there are more images to process
 		while(1){
 
@@ -710,8 +898,14 @@ int main(int argc, char *argv[])
 				// Can run
 				while (lastreadpix >= reqpixFwd)
 				{
-					midBuff[midHeadidx] = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
-					midHeadidx = (midHeadidx + 1) & wrapmask;
+					uint32_t fwdVal = fwd3(w, h, N, inpBuff.data(), wrapmask, x1, y1, fwdwindows);
+#ifdef _DEBUG
+					uint32_t refval = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
+					assert(refval == fwdVal);
+#endif
+					
+					midBuff[midHeadidx & wrapmask] = fwdVal;
+					++midHeadidx;
 					if(++x1 >= (int)w) {
 						x1 = 0;
 						if(++y1 >= (int)h){ //y overflow means we are on next image.
@@ -727,7 +921,13 @@ int main(int argc, char *argv[])
 				// Can run
 				while (lastfwdpix >= reqpixRev)
 				{
-					outBuff[outHeadidx] = rev(w, h, N, midBuff.data(), wrapmask, x2, y2);
+					uint32_t revVal = rev3(w, h, N, midBuff.data(), wrapmask, x2, y2, revwindows);
+#ifdef _DEBUG
+					uint32_t refval = rev(w, h, N, midBuff.data(), wrapmask, x2, y2);
+					assert(refval == revVal);
+#endif
+
+					outBuff[outHeadidx] = revVal;
 					outHeadidx = (outHeadidx + 1) & wrapmaskout;
 					if(++x2 >= (int)w) {
 						x2 = 0;
@@ -746,7 +946,7 @@ int main(int argc, char *argv[])
 					assert(outHeadidx == 0);
 
 					// if a regular chunksize write would over-write to output
-					if (EndOfFile && lastwritepix + chunksizePix >= w*h)
+					if (EndOfFile && lastwritepix + chunksizePix >= (int)w*(int)h)
 					{
 						int pixleft = (w*h - 1) - lastwritepix;
 						pack_blob(pixleft, bits, &outBuff[0], &rawchunk[0]);
