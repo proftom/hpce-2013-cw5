@@ -661,45 +661,56 @@ uint32_t dilate3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int 
 	int offset = y-n;
 	uint32_t maxVal = 0;
 
-	if (x == 0)
-	{
-		for (int i = starty; i <= std::min(y+n, (int)h-1); ++i)
+	auto computewindow = [&](int i){
+		uint32_t slideval;
+		if (x == 0)
 		{
 			maxslideWindows[i - offset].reset();
 			for (int j = 0; j <= xlast; ++j)
 			{
 				maxslideWindows[i - offset].push(j, ptrBuffer[(i*w + j) & mask]);
 			}
-			maxVal = std::max(maxVal, maxslideWindows[i - offset].current());
-		}
-	} else {
-		//Upper half and middle of diamond
-		for (int i = starty; i <= y; ++i)
-		{
-			if (xlast >= (int)w) {
-				maxVal = std::max(maxVal, maxslideWindows[i - offset].pop(xfirst-1));
-			} else {
-				maxVal = std::max(maxVal, maxslideWindows[i - offset].pushpop(xlast, xfirst-1, ptrBuffer[(i*w + xlast) & mask]));
-			}
-			--xfirst;
-			++xlast;
+			slideval = maxslideWindows[i - offset].current();
+
+		} else if (xlast >= (int)w) {
+			slideval = maxslideWindows[i - offset].pop(xfirst-1);
+		} else {
+			slideval = maxslideWindows[i - offset].pushpop(xlast, xfirst-1, ptrBuffer[(i*w + xlast) & mask]);
 		}
 
-		// start shrinking x scan instead
-		xfirst += 2;
-		xlast -= 2;
-
-		// Lower half
-		for (int i = y+1; i <= std::min(y+n, (int)h-1); ++i)
+#ifdef _DEBUG
+		uint32_t dbgval = 0;
+		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
 		{
-			if (xlast >= (int)w) {
-				maxVal = std::max(maxVal, maxslideWindows[i - offset].pop(xfirst-1));
-			} else {
-				maxVal = std::max(maxVal, maxslideWindows[i - offset].pushpop(xlast, xfirst-1, ptrBuffer[(i*w + xlast) & mask]));
-			}
-			++xfirst;
-			--xlast;
+			dbgval = std::max(ptrBuffer[(i*w + j) & mask], dbgval);
 		}
+		assert(dbgval == slideval);
+#endif
+
+		maxVal = std::max(maxVal, slideval);
+	};
+
+
+	//Upper half and middle of diamond
+	for (int i = starty; i <= y ; ++i)
+	{
+		computewindow(i);
+
+		--xfirst;
+		++xlast;
+	}
+
+	// start shrinking x scan instead
+	xfirst += 2;
+	xlast -= 2;
+
+	// Lower half
+	for (int i = y+1; i <= std::min(y+n, (int)h-1); ++i)
+	{
+		computewindow(i);
+
+		++xfirst;
+		--xlast;
 	}
 
 	return maxVal;
@@ -713,45 +724,56 @@ uint32_t erode3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y
 	int offset = y-n;
 	uint32_t minVal = -1;
 
-	if (x == 0)
-	{
-		for (int i = starty; i <= std::min(y+n, (int)h-1); ++i)
+	auto computewindow = [&](int i){
+		uint32_t slideval;
+		if (x == 0)
 		{
 			minslideWindows[i - offset].reset();
 			for (int j = 0; j <= xlast; ++j)
 			{
 				minslideWindows[i - offset].push(j, ptrBuffer[(i*w + j) & mask]);
 			}
-			minVal = std::min(minVal, minslideWindows[i - offset].current());
-		}
-	} else {
-		//Upper half and middle of diamond
-		for (int i = starty; i <= y; ++i)
-		{
-			if (xlast >= (int)w) {
-				minVal = std::min(minVal, minslideWindows[i - offset].pop(xfirst-1));
-			} else {
-				minVal = std::min(minVal, minslideWindows[i - offset].pushpop(xlast, xfirst-1, ptrBuffer[(i*w + xlast) & mask]));
-			}
-			--xfirst;
-			++xlast;
+			slideval = minslideWindows[i - offset].current();
+
+		} else if (xlast >= (int)w) {
+			slideval = minslideWindows[i - offset].pop(xfirst-1);
+		} else {
+			slideval = minslideWindows[i - offset].pushpop(xlast, xfirst-1, ptrBuffer[(i*w + xlast) & mask]);
 		}
 
-		// start shrinking x scan instead
-		xfirst += 2;
-		xlast -= 2;
-
-		// Lower half
-		for (int i = y+1; i <= std::min(y+n, (int)h-1); ++i)
+#ifdef _DEBUG
+		uint32_t dbgval = -1;
+		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
 		{
-			if (xlast >= (int)w) {
-				minVal = std::min(minVal, minslideWindows[i - offset].pop(xfirst-1));
-			} else {
-				minVal = std::min(minVal, minslideWindows[i - offset].pushpop(xlast, xfirst-1, ptrBuffer[(i*w + xlast) & mask]));
-			}
-			++xfirst;
-			--xlast;
+			dbgval = std::min(ptrBuffer[(i*w + j) & mask], dbgval);
 		}
+		assert(dbgval == slideval);
+#endif
+
+		minVal = std::min(minVal, slideval);
+	};
+
+
+	//Upper half and middle of diamond
+	for (int i = starty; i <= y ; ++i)
+	{
+		computewindow(i);
+
+		--xfirst;
+		++xlast;
+	}
+
+	// start shrinking x scan instead
+	xfirst += 2;
+	xlast -= 2;
+
+	// Lower half
+	for (int i = y+1; i <= std::min(y+n, (int)h-1); ++i)
+	{
+		computewindow(i);
+
+		++xfirst;
+		--xlast;
 	}
 
 	return minVal;
@@ -898,6 +920,7 @@ int main(int argc, char *argv[])
 				// Can run
 				while (lastreadpix >= reqpixFwd)
 				{
+
 					uint32_t fwdVal = fwd3(w, h, N, inpBuff.data(), wrapmask, x1, y1, fwdwindows);
 #ifdef _DEBUG
 					uint32_t refval = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
