@@ -737,6 +737,9 @@ int main(int argc, char *argv[])
 		int consume2 = 0;
 		int numpixread = 0;
 		//Reading data into pipeline
+		int maxInBuffer = 0;
+		int pxWrittenOut = 0;
+
 		auto readData = [&]() {
 			while (1) {
 
@@ -749,10 +752,11 @@ int main(int argc, char *argv[])
 					EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
 					//int numpixread = EndOfFile ? bytesread*8/bits : chunksizePix;
 					numpixread = chunksizePix; //we pretend we kept reading, to make the check easier for next stages.
-
+					
 					unpack_blob(numpixread, bits, &rawchunk[0], (uint32_t*)&inpBuff[inpHeadidx]);
 					inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
 					produce += chunksizePix;
+					maxInBuffer = std::max(produce, maxInBuffer);
 					lastreadpix += numpixread;
 				}
 
@@ -769,9 +773,11 @@ int main(int argc, char *argv[])
 			while (1) {
 				//We require that the last pixel read is greater than the pixel require by the forward pass
 				//We must make sure that forward does not produce faster than reverse can consume
-				while (lastreadpix >= reqpixFwd  && produce2 - consume2 < Cbuffsize - w*N)
+				//otherwise we will corrupt the buffer
+				while (lastreadpix >= reqpixFwd  && produce2 - consume2 <= 2*chunksizePix/*Cbuffsize - w*N*/)
 				{
 					//fprintf(stderr, "forwarding\n");
+					produce--;
 					midBuff[midHeadidx] = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
 					consume++;
 					produce2++;
@@ -782,8 +788,8 @@ int main(int argc, char *argv[])
 							y1 = 0;
 						}
 					}
-					++lastfwdpix; //last forward pixel that was acutally produced
-					++reqpixFwd;
+					++lastfwdpix; //last forward pixel that was actually produced
+					++reqpixFwd; //the required pixel so forward can do it's thing
 				}
 				int test = 0;
 			}
@@ -850,11 +856,13 @@ int main(int argc, char *argv[])
 						int pixleft = (w*h - 1) - lastwritepix;
 						pack_blob(pixleft, bits, &outBuff[0], &rawchunk[0]);
 						write_blob(STDOUT_FILENO, pixleft, &rawchunk[0]);
+						pxWrittenOut += pixleft;
 						break;
 					} else {
 						pack_blob(chunksizePix, bits, &outBuff[0], &rawchunk[0]);
 						write_blob(STDOUT_FILENO, chunksizeBytes, &rawchunk[0]);
 						lastwritepix += chunksizePix;
+						pxWrittenOut += chunksizePix;
 					}
 				}
 
