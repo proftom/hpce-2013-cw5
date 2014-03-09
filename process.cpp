@@ -10,6 +10,7 @@
 #include "parallel_for.h"
 #include <iostream>
 #include <chrono>
+#include <iostream>
 
 class Timer
 {
@@ -680,7 +681,7 @@ int main(int argc, char *argv[])
 		int chunksizeBytes = 1 << 12;
 		//int chunksizeBytes = 8;
 		int chunksizePix = chunksizeBytes * 8 / bits;
-		int maxdata = w*(2 * N + 1) + chunksizePix;
+		int maxdata = w*(2 * N + 1) + 2*chunksizePix;
 		int Cbuffsize = getnextpow2(maxdata);
 
 		std::vector<uint32_t> inpBuff(Cbuffsize);
@@ -690,9 +691,9 @@ int main(int argc, char *argv[])
 		std::vector<uint32_t> midBuff(Cbuffsize);
 		int midHeadidx = 0;
 
-		std::vector<uint32_t> outBuff(chunksizePix);
+		std::vector<uint32_t> outBuff(2*chunksizePix);
 		int outHeadidx = 0;
-		int wrapmaskout = chunksizePix - 1;
+		int wrapmaskout = 2*chunksizePix - 1;
 
 		std::vector<uint64_t> rawchunk(chunksizeBytes / 8);
 
@@ -734,28 +735,43 @@ int main(int argc, char *argv[])
 
 		int produce2 = 0;
 		int consume2 = 0;
+		int numpixread = 0;
 		//Reading data into pipeline
 		auto readData = [&]() {
 			while (1) {
-				while (reqpixFwd > lastreadpix && produce - consume < Cbuffsize - w*(2 * N + 1))
-			{
-				uint64_t bytesread;
-				EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
-				//int numpixread = EndOfFile ? bytesread*8/bits : chunksizePix;
-				int numpixread = chunksizePix; //we pretend we kept reading, to make the check easier for next stages.
 
-				unpack_blob(numpixread, bits, &rawchunk[0], (uint32_t*)&inpBuff[inpHeadidx]);
-				inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
-				produce += chunksizePix;
-				lastreadpix += numpixread;
-			}
+				//reqpixFwd is the pixel required by the forward pass. There will be a chunkSizePix available ontop of this, which must be
+				//greater than the last pixel read from the input stream
+				while (reqpixFwd + chunksizePix > lastreadpix)
+				{
+						fprintf(stderr, "reading\n");
+					uint64_t bytesread;
+					EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
+					//int numpixread = EndOfFile ? bytesread*8/bits : chunksizePix;
+					numpixread = chunksizePix; //we pretend we kept reading, to make the check easier for next stages.
+
+					unpack_blob(numpixread, bits, &rawchunk[0], (uint32_t*)&inpBuff[inpHeadidx]);
+					inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
+					produce += chunksizePix;
+					lastreadpix += numpixread;
+				}
+
+				if (EndOfFile) {
+					fprintf(stderr, "End of file\n");
+					break;
+				}
+					
+
 			}
 		};
 
 		auto fowardPass = [&]() {
 			while (1) {
+				//We require that the last pixel read is greater than the pixel require by the forward pass
+				//We must make sure that forward does not produce faster than reverse can consume
 				while (lastreadpix >= reqpixFwd  && produce2 - consume2 < Cbuffsize - w*N)
 				{
+					//fprintf(stderr, "forwarding\n");
 					midBuff[midHeadidx] = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
 					consume++;
 					produce2++;
@@ -766,9 +782,10 @@ int main(int argc, char *argv[])
 							y1 = 0;
 						}
 					}
-					++lastfwdpix;
+					++lastfwdpix; //last forward pixel that was acutally produced
 					++reqpixFwd;
 				}
+				int test = 0;
 			}
 		};
 		 
@@ -803,8 +820,10 @@ int main(int argc, char *argv[])
 
 				// Can run
 				//lastfwdpix
-				while (lastfwdpix >= reqpixRev)
+				while (lastfwdpix >= reqpixRev && lastwritepix-lastrevpix < 2*chunksizePix)
 				{
+
+					//fprintf(stderr, "backwarding\n");
 					outBuff[outHeadidx] = rev(w, h, N, midBuff.data(), wrapmask, x2, y2);
 					outHeadidx = (outHeadidx + 1) & wrapmaskout;
 					consume2++;
@@ -817,15 +836,14 @@ int main(int argc, char *argv[])
 					++lastrevpix;
 					++reqpixRev;
 				}
-				bRevCanRun = false;
-				bWriteCanRun = true;
+
 
 				//fprintf(stderr, "lastrevpix: %#010x\t outHeadidx: %#010x\t reqpixRev: %#010x\n", lastrevpix, outHeadidx, reqpixRev);
 
-				if (lastrevpix >= lastwritepix + chunksizePix && bWriteCanRun)
+				if (lastrevpix >= lastwritepix + chunksizePix)
 				{
 					//assert(outHeadidx == 0);
-
+					fprintf(stderr, "writing chunk out\n");
 					// if a regular chunksize write would over-write to output
 					if (EndOfFile && lastwritepix + chunksizePix >= w*h)
 					{
@@ -839,8 +857,7 @@ int main(int argc, char *argv[])
 						lastwritepix += chunksizePix;
 					}
 				}
-				bWriteCanRun = false;
-				bFwdCanRun = true;
+
 
 				//fprintf(stderr, "\n");
 				
