@@ -856,9 +856,9 @@ int main(int argc, char *argv[])
 		std::vector<uint32_t> tomBuff(w*h*2);
 		int tomHeadidx = 0;
 
-		std::vector<uint32_t> outBuff(chunksizePix);
+		std::vector<uint32_t> outBuff(10*chunksizePix);
 		int outHeadidx = 0;
-		int wrapmaskout = chunksizePix - 1;
+		int wrapmaskout = 10*chunksizePix - 1;
 
 		std::vector<uint64_t> rawchunk(chunksizeBytes/8);
 
@@ -953,9 +953,9 @@ int main(int argc, char *argv[])
 				// Can run
 				while (lastfwdpix >= reqpixRev)
 				{
-					uint32_t revVal = rev3(w, h, N, midBuff.data(), wrapmask, x2, y2, revwindows);
+					uint32_t revVal = rev3(w, h, N, midBuff.data(), midwrapmask, x2, y2, revwindows);
 #ifdef _DEBUG
-					uint32_t refval = rev(w, h, N, midBuff.data(), wrapmask, x2, y2);
+					uint32_t refval = rev(w, h, N, midBuff.data(), midwrapmask, x2, y2);
 					assert(refval == revVal);
 #endif
 
