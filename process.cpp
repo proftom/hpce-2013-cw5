@@ -6,6 +6,8 @@
 #include <iostream>
 #include <string>
 #include <cstdint>
+#include "task_group.h"
+#include "parallel_for.h"
 
 /*
 This is a program for performing morphological operations in gray-scale
@@ -898,17 +900,11 @@ int main(int argc, char *argv[])
 
 		auto fwd3=levels < 0 ? erode3 : dilate3;
 		auto rev3=levels < 0 ? dilate3 : erode3;
+		
+		tbb::task_group group;
 
-		// While there are more images to process
-		while(1){
-
-			// The great pipeline.
-			// When the input stream ends, the early stages will operate on invalid data.
-			// This is fine as it does not affect the output
-			while (1){
-
-				// Should run
-				//We should load as much data into the buffer as possible, which is the currently required forward pixel + sizeOfBuffer - chunk size
+		auto readData = [&]() {
+			while (1) {
 				while (reqpixFwd + chunksizePix > lastreadpix /* lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix*/)
 				{
 					fprintf(stderr, "reading\n");
@@ -921,11 +917,30 @@ int main(int argc, char *argv[])
 					inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
 					lastreadpix += numpixread;
 				}
+				if (bExit)
+					break;
+			}
+		};
+		
+		group.run(readData);
+
+
+		// While there are more images to process
+		while(1){
+
+			// The great pipeline.
+			// When the input stream ends, the early stages will operate on invalid data.
+			// This is fine as it does not affect the output
+			while (1){
+
+				// Should run
+				//We should load as much data into the buffer as possible, which is the currently required forward pixel + sizeOfBuffer - chunk size
+
 
 				//fprintf(stderr, "lastreadpix: %#010x\t inpHeadidx: %#010x\n", lastreadpix, inpHeadidx);
 
 				// Can run
-				while (lastreadpix >= reqpixFwd)
+				while (lastreadpix >= reqpixFwd && reqpixRev + chunksizePix > lastfwdpix)
 				{
 					//fprintf(stderr, "fwd\n");
 					uint32_t fwdVal = fwd3(w, h, N, inpBuff.data(), wrapmask, x1, y1, fwdwindows);
@@ -977,7 +992,7 @@ int main(int argc, char *argv[])
 				while (lastrevpix >= lastwritepix + chunksizePix)
 				{
 					fprintf(stderr, "writing\n");
-					assert(outHeadidx == 0);
+					//assert(outHeadidx == 0);
 
 					// if a regular chunksize write would over-write to output
 					if (EndOfFile && lastwritepix + chunksizePix >= (int)w*(int)h)
