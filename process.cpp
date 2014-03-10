@@ -849,14 +849,15 @@ int main(int argc, char *argv[])
 		int inpHeadidx = 0;
 		int wrapmask = Cbuffsize - 1;
 
-		std::vector<uint32_t> midBuff(10*Cbuffsize);
-		int midwrapmask = 10*Cbuffsize - 1;
+		std::vector<uint32_t> midBuff(Cbuffsize);
+		int midwrapmask = Cbuffsize - 1;
 		int midHeadidx = 0;
 
 
-		std::vector<uint32_t> outBuff(10*chunksizePix);
+		std::vector<uint32_t> outBuff(2*chunksizePix);
 		int outHeadidx = 0;
-		int wrapmaskout = 10*chunksizePix - 1;
+		int outTailidx = 0;
+		int wrapmaskout = 2*chunksizePix - 1;
 
 		std::vector<uint64_t> rawchunk(chunksizeBytes/8);
 
@@ -980,11 +981,13 @@ int main(int argc, char *argv[])
 					if (EndOfFile && lastwritepix + chunksizePix >= (int)w*(int)h)
 					{
 						int pixleft = (w*h - 1) - lastwritepix;
-						pack_blob(pixleft, bits, &outBuff[0], &rawchunk[0]);
-						write_blob(STDOUT_FILENO, pixleft, &rawchunk[0]);
+						pack_blob(pixleft, bits, &outBuff[outTailidx], &rawchunk[0]);
+						outTailidx = (outTailidx + pixleft) & wrapmaskout;
+						write_blob(STDOUT_FILENO, pixleft*8/bits, &rawchunk[0]);
 						break;
 					} else {
-						pack_blob(chunksizePix, bits, &outBuff[0], &rawchunk[0]);
+						pack_blob(chunksizePix, bits, &outBuff[outTailidx], &rawchunk[0]);
+						outTailidx = (outTailidx + chunksizePix) & wrapmaskout;
 						write_blob(STDOUT_FILENO, chunksizeBytes, &rawchunk[0]);
 						lastwritepix += chunksizePix;
 					}
