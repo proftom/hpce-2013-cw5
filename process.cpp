@@ -849,12 +849,10 @@ int main(int argc, char *argv[])
 		int inpHeadidx = 0;
 		int wrapmask = Cbuffsize - 1;
 
-		std::vector<uint32_t> midBuff(2*Cbuffsize);
-		int midwrapmask = 2*Cbuffsize - 1;
+		std::vector<uint32_t> midBuff(10*Cbuffsize);
+		int midwrapmask = 10*Cbuffsize - 1;
 		int midHeadidx = 0;
 
-		std::vector<uint32_t> tomBuff(w*h*2);
-		int tomHeadidx = 0;
 
 		std::vector<uint32_t> outBuff(10*chunksizePix);
 		int outHeadidx = 0;
@@ -935,7 +933,7 @@ int main(int argc, char *argv[])
 					assert(lastreadpix - Cbuffsize <= lastfwdpix - (int)(w*N));
 					
 					midBuff[midHeadidx & midwrapmask] = fwdVal;
-					tomBuff[tomHeadidx++] = fwdVal;
+					
 					
 					++midHeadidx;
 					if(++x1 >= (int)w) {
