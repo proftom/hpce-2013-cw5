@@ -902,7 +902,7 @@ int main(int argc, char *argv[])
 
 		auto fwd3=levels < 0 ? erode3 : dilate3;
 		auto rev3=levels < 0 ? dilate3 : erode3;
-		bool bTest = false;
+		bool bTest = true;
 		bool bTest2 = true;
 
 		int runTimesRead = 0;
@@ -935,8 +935,8 @@ int main(int argc, char *argv[])
 		auto forward = [&]() {
 			while (1) {
 				//The last pixel read needs to be atleast the required pixel for the fwd dependecy
-				//The requested pixel for the reverse stage must be atleast he last forward pixel produced
-				while (lastreadpix >= reqpixFwd && reqpixRev + chunksizePix > lastfwdpix && bTest2)
+				//The required pixel for the reverse stage must be atleast the last forward pixel produced
+				while (lastreadpix >= reqpixFwd && reqpixRev + chunksizePix >= lastfwdpix )
 				{
 					runTimesForwrd++;
 					//fprintf(stderr, "fwd\n");
@@ -971,7 +971,7 @@ int main(int argc, char *argv[])
 			// Can run
 			//Must be sufficiet pixels generated from the forward pass for rev to proceed 
 			//Do not generate too many pixels such that we write over non-written parts of the output buffer
-			while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + chunksizePix && bTest)
+			while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + chunksizePix )
 			{
 				uint32_t revVal = rev3(w, h, N, midBuff.data(), midwrapmask, x2, y2, revwindows);
 #ifdef _DEBUG
@@ -1017,14 +1017,14 @@ int main(int argc, char *argv[])
 
 				//fprintf(stderr, "lastrevpix: %#010x\t outHeadidx: %#010x\t reqpixRev: %#010x\n", lastrevpix, outHeadidx, reqpixRev);
 
-				//if the last generted pixel is more recent than the last generated PLUS the chunkSizePix (which is what is written out), then write out.
+				//if the last generted pixel is more recent than the last written PLUS the chunkSizePix (which is what shall be written out), then write out.
 				while (lastrevpix >= lastwritepix + chunksizePix  )
 				{
 					fprintf(stderr, "writing\n");
 					//assert(outHeadidx == 0);
-					runTimesWrite;
+					runTimesWrite++;
 					// if a regular chunksize write would over-write to output
-					if (EndOfFile && lastwritepix + chunksizePix >= (int)w*(int)h)
+					if (EndOfFile && lastwritepix + chunksizePix >= (int)w*(int)h )
 					{
 						int pixleft = (w*h - 1) - lastwritepix;
 						pack_blob(pixleft, bits, &outBuff[outTailidx], &rawchunk[0]);
