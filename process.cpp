@@ -875,6 +875,8 @@ int main(int argc, char *argv[])
 
 		bool EndOfFile = 0;
 
+		bool bExit = false;
+
 		int y1 = 0;
 		int x1 = 0;
 		int y2 = 0;
@@ -984,6 +986,7 @@ int main(int argc, char *argv[])
 						pack_blob(pixleft, bits, &outBuff[outTailidx], &rawchunk[0]);
 						outTailidx = (outTailidx + pixleft) & wrapmaskout;
 						write_blob(STDOUT_FILENO, pixleft*8/bits, &rawchunk[0]);
+						bExit = true;
 						break;
 					} else {
 						pack_blob(chunksizePix, bits, &outBuff[outTailidx], &rawchunk[0]);
@@ -992,6 +995,9 @@ int main(int argc, char *argv[])
 						lastwritepix += chunksizePix;
 					}
 				}
+
+				if (bExit)
+					break;
 
 				//fprintf(stderr, "\n");
 				
