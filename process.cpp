@@ -856,10 +856,10 @@ int main(int argc, char *argv[])
 		int midHeadidx = 0;
 
 
-		std::vector<uint32_t> outBuff(3*chunksizePix);
+		std::vector<uint32_t> outBuff(2*chunksizePix);
 		int outHeadidx = 0;
 		int outTailidx = 0;
-		int wrapmaskout = 3*chunksizePix - 1;
+		int wrapmaskout = 2*chunksizePix - 1;
 
 		std::vector<uint64_t> rawchunk(chunksizeBytes/8);
 
@@ -907,7 +907,7 @@ int main(int argc, char *argv[])
 
 		auto readData = [&]() {
 			while (1) {
-				while (reqpixFwd /*+ chunksizePix*/ > lastreadpix /* lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix*/)
+				while (reqpixFwd + chunksizePix > lastreadpix /* lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix*/)
 				{
 					fprintf(stderr, "reading\n");
 					uint64_t bytesread;
@@ -925,7 +925,7 @@ int main(int argc, char *argv[])
 		
 		auto forward = [&]() {
 			while (1) {
-				while (lastreadpix >= reqpixFwd && reqpixRev /*+ chunksizePix*/ > lastfwdpix)
+				while (lastreadpix >= reqpixFwd && reqpixRev + chunksizePix > lastfwdpix)
 				{
 					//fprintf(stderr, "fwd\n");
 					uint32_t fwdVal = fwd3(w, h, N, inpBuff.data(), wrapmask, x1, y1, fwdwindows);
@@ -958,7 +958,7 @@ int main(int argc, char *argv[])
 			// Can run
 			//Must be sufficiet pixels generated from the forward pass for rev to proceed 
 			//Do not generate too many pixels such that we write over non-written parts of the output buffer
-			while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + 3*chunksizePix)
+			while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + chunksizePix)
 			{
 				uint32_t revVal = rev3(w, h, N, midBuff.data(), midwrapmask, x2, y2, revwindows);
 #ifdef _DEBUG
@@ -986,7 +986,7 @@ int main(int argc, char *argv[])
 		group.run(forward);
 		group.run(reverse);
 
-
+		bool bTest = false;
 		// While there are more images to process
 		while(1){
 
@@ -1002,7 +1002,25 @@ int main(int argc, char *argv[])
 				//fprintf(stderr, "lastreadpix: %#010x\t inpHeadidx: %#010x\n", lastreadpix, inpHeadidx);
 
 				// Can run
-
+//				while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + chunksizePix)
+//				{
+//					uint32_t revVal = rev3(w, h, N, midBuff.data(), midwrapmask, x2, y2, revwindows);
+//#ifdef _DEBUG
+//					uint32_t refval = rev(w, h, N, midBuff.data(), midwrapmask, x2, y2);
+//					assert(refval == revVal);
+//#endif
+//
+//					outBuff[outHeadidx] = revVal;
+//					outHeadidx = (outHeadidx + 1) & wrapmaskout;
+//					if (++x2 >= (int)w) {
+//						x2 = 0;
+//						if (++y2 >= (int)h){ //y overflow means we are on next image.
+//							y2 = 0;
+//						}
+//					}
+//					++lastrevpix;
+//					++reqpixRev;
+//				}
 
 				//fprintf(stderr, "lastfwdpix: %#010x\t midHeadidx: %#010x\t reqpixFwd: %#010x\n", lastfwdpix, inpHeadidx, reqpixFwd);
 
@@ -1010,7 +1028,8 @@ int main(int argc, char *argv[])
 
 				//fprintf(stderr, "lastrevpix: %#010x\t outHeadidx: %#010x\t reqpixRev: %#010x\n", lastrevpix, outHeadidx, reqpixRev);
 
-				while (lastrevpix >= lastwritepix + chunksizePix)
+				//if the last generted pixel is more recent than the last generated PLUS the chunkSizePix (which is what is written out), then write out.
+				while (lastrevpix >= lastwritepix	 + chunksizePix && bTest)
 				{
 					fprintf(stderr, "writing\n");
 					//assert(outHeadidx == 0);
