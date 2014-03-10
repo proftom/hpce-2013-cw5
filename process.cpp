@@ -856,10 +856,10 @@ int main(int argc, char *argv[])
 		int midHeadidx = 0;
 
 
-		std::vector<uint32_t> outBuff(2*chunksizePix);
+		std::vector<uint32_t> outBuff(3*chunksizePix);
 		int outHeadidx = 0;
 		int outTailidx = 0;
-		int wrapmaskout = 2*chunksizePix - 1;
+		int wrapmaskout = 3*chunksizePix - 1;
 
 		std::vector<uint64_t> rawchunk(chunksizeBytes/8);
 
@@ -884,6 +884,8 @@ int main(int argc, char *argv[])
 		int y2 = 0;
 		int x2 = 0;
 
+		int produce = 0;
+		int consume = 0;
 
 		std::vector<minmaxSlidingWindow<uint32_t>> minslideWindows;
 		minslideWindows.reserve(2*N + 1);
@@ -905,14 +907,13 @@ int main(int argc, char *argv[])
 
 		auto readData = [&]() {
 			while (1) {
-				while (reqpixFwd + chunksizePix > lastreadpix /* lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix*/)
+				while (reqpixFwd /*+ chunksizePix*/ > lastreadpix /* lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix*/)
 				{
 					fprintf(stderr, "reading\n");
 					uint64_t bytesread;
 					EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
 					//int numpixread = EndOfFile ? bytesread*8/bits : chunksizePix;
 					int numpixread = chunksizePix; //we pretend we kept reading, to make the check easier for next stages.
-
 					unpack_blob(numpixread, bits, &rawchunk[0], (uint32_t*)&inpBuff[inpHeadidx]);
 					inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
 					lastreadpix += numpixread;
@@ -922,7 +923,68 @@ int main(int argc, char *argv[])
 			}
 		};
 		
+		auto forward = [&]() {
+			while (1) {
+				while (lastreadpix >= reqpixFwd && reqpixRev /*+ chunksizePix*/ > lastfwdpix)
+				{
+					//fprintf(stderr, "fwd\n");
+					uint32_t fwdVal = fwd3(w, h, N, inpBuff.data(), wrapmask, x1, y1, fwdwindows);
+#ifdef _DEBUG
+					uint32_t refval = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
+					assert(refval == fwdVal);
+#endif
+					assert(lastreadpix - Cbuffsize <= lastfwdpix - (int)(w*N));
+
+					midBuff[midHeadidx & midwrapmask] = fwdVal;
+
+
+					++midHeadidx;
+					if (++x1 >= (int)w) {
+						x1 = 0;
+						if (++y1 >= (int)h){ //y overflow means we are on next image.
+							y1 = 0;
+						}
+					}
+					++lastfwdpix;
+					++reqpixFwd;
+				}
+				if (bExit)
+					break;
+			}
+		};
+
+		auto reverse = [&]() {
+			while (1) {
+			// Can run
+			//Must be sufficiet pixels generated from the forward pass for rev to proceed 
+			//Do not generate too many pixels such that we write over non-written parts of the output buffer
+			while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + 3*chunksizePix)
+			{
+				uint32_t revVal = rev3(w, h, N, midBuff.data(), midwrapmask, x2, y2, revwindows);
+#ifdef _DEBUG
+				uint32_t refval = rev(w, h, N, midBuff.data(), midwrapmask, x2, y2);
+				assert(refval == revVal);
+#endif
+
+				outBuff[outHeadidx] = revVal;
+				outHeadidx = (outHeadidx + 1) & wrapmaskout;
+				if (++x2 >= (int)w) {
+					x2 = 0;
+					if (++y2 >= (int)h){ //y overflow means we are on next image.
+						y2 = 0;
+					}
+				}
+				++lastrevpix;
+				++reqpixRev;
+			}
+			if (bExit)
+				break;
+		}
+		};
+
 		group.run(readData);
+		group.run(forward);
+		group.run(reverse);
 
 
 		// While there are more images to process
@@ -940,52 +1002,11 @@ int main(int argc, char *argv[])
 				//fprintf(stderr, "lastreadpix: %#010x\t inpHeadidx: %#010x\n", lastreadpix, inpHeadidx);
 
 				// Can run
-				while (lastreadpix >= reqpixFwd && reqpixRev + chunksizePix > lastfwdpix)
-				{
-					//fprintf(stderr, "fwd\n");
-					uint32_t fwdVal = fwd3(w, h, N, inpBuff.data(), wrapmask, x1, y1, fwdwindows);
-#ifdef _DEBUG
-					uint32_t refval = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
-					assert(refval == fwdVal);
-#endif
-					assert(lastreadpix - Cbuffsize <= lastfwdpix - (int)(w*N));
-					
-					midBuff[midHeadidx & midwrapmask] = fwdVal;
-					
-					
-					++midHeadidx;
-					if(++x1 >= (int)w) {
-						x1 = 0;
-						if(++y1 >= (int)h){ //y overflow means we are on next image.
-							y1 = 0;
-						}
-					}
-					++lastfwdpix;
-					++reqpixFwd;
-				}
+
 
 				//fprintf(stderr, "lastfwdpix: %#010x\t midHeadidx: %#010x\t reqpixFwd: %#010x\n", lastfwdpix, inpHeadidx, reqpixFwd);
 
-				// Can run
-				while (lastfwdpix >= reqpixRev)
-				{
-					uint32_t revVal = rev3(w, h, N, midBuff.data(), midwrapmask, x2, y2, revwindows);
-#ifdef _DEBUG
-					uint32_t refval = rev(w, h, N, midBuff.data(), midwrapmask, x2, y2);
-					assert(refval == revVal);
-#endif
 
-					outBuff[outHeadidx] = revVal;
-					outHeadidx = (outHeadidx + 1) & wrapmaskout;
-					if(++x2 >= (int)w) {
-						x2 = 0;
-						if(++y2 >= (int)h){ //y overflow means we are on next image.
-							y2 = 0;
-						}
-					}
-					++lastrevpix;
-					++reqpixRev;
-				}
 
 				//fprintf(stderr, "lastrevpix: %#010x\t outHeadidx: %#010x\t reqpixRev: %#010x\n", lastrevpix, outHeadidx, reqpixRev);
 
