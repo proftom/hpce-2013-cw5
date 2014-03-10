@@ -902,7 +902,7 @@ int main(int argc, char *argv[])
 
 		auto fwd3=levels < 0 ? erode3 : dilate3;
 		auto rev3=levels < 0 ? dilate3 : erode3;
-		
+		bool bTest = false;
 		tbb::task_group group;
 
 		auto readData = [&]() {
@@ -925,6 +925,8 @@ int main(int argc, char *argv[])
 		
 		auto forward = [&]() {
 			while (1) {
+				//The last pixel read needs to be atleast the required pixel 
+				//The requested pixel for the reverse stage must be greater than the last forward pixel produced
 				while (lastreadpix >= reqpixFwd && reqpixRev + chunksizePix > lastfwdpix)
 				{
 					//fprintf(stderr, "fwd\n");
@@ -958,7 +960,7 @@ int main(int argc, char *argv[])
 			// Can run
 			//Must be sufficiet pixels generated from the forward pass for rev to proceed 
 			//Do not generate too many pixels such that we write over non-written parts of the output buffer
-			while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + chunksizePix)
+			while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + chunksizePix && bTest)
 			{
 				uint32_t revVal = rev3(w, h, N, midBuff.data(), midwrapmask, x2, y2, revwindows);
 #ifdef _DEBUG
@@ -986,7 +988,7 @@ int main(int argc, char *argv[])
 		group.run(forward);
 		group.run(reverse);
 
-		bool bTest = false;
+
 		// While there are more images to process
 		while(1){
 
@@ -1029,7 +1031,7 @@ int main(int argc, char *argv[])
 				//fprintf(stderr, "lastrevpix: %#010x\t outHeadidx: %#010x\t reqpixRev: %#010x\n", lastrevpix, outHeadidx, reqpixRev);
 
 				//if the last generted pixel is more recent than the last generated PLUS the chunkSizePix (which is what is written out), then write out.
-				while (lastrevpix >= lastwritepix	 + chunksizePix && bTest)
+				while (lastrevpix >= lastwritepix	 + chunksizePix )
 				{
 					fprintf(stderr, "writing\n");
 					//assert(outHeadidx == 0);
