@@ -903,12 +903,21 @@ int main(int argc, char *argv[])
 		auto fwd3=levels < 0 ? erode3 : dilate3;
 		auto rev3=levels < 0 ? dilate3 : erode3;
 		bool bTest = false;
+		bool bTest2 = true;
+
+		int runTimesRead = 0;
+		int runTimesForwrd = 0;
+		int runTimesRev = 0;
+		int runTimesWrite = 0;
+
 		tbb::task_group group;
 
 		auto readData = [&]() {
 			while (1) {
+				//If the required foward pixel is greater than the last pixel read read in a chunk
 				while (reqpixFwd + chunksizePix > lastreadpix /* lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix*/)
 				{
+					runTimesRead++;
 					fprintf(stderr, "reading\n");
 					uint64_t bytesread;
 					EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
@@ -925,10 +934,11 @@ int main(int argc, char *argv[])
 		
 		auto forward = [&]() {
 			while (1) {
-				//The last pixel read needs to be atleast the required pixel 
-				//The requested pixel for the reverse stage must be greater than the last forward pixel produced
-				while (lastreadpix >= reqpixFwd && reqpixRev + chunksizePix > lastfwdpix)
+				//The last pixel read needs to be atleast the required pixel for the fwd dependecy
+				//The requested pixel for the reverse stage must be atleast he last forward pixel produced
+				while (lastreadpix >= reqpixFwd && reqpixRev + chunksizePix > lastfwdpix && bTest2)
 				{
+					runTimesForwrd++;
 					//fprintf(stderr, "fwd\n");
 					uint32_t fwdVal = fwd3(w, h, N, inpBuff.data(), wrapmask, x1, y1, fwdwindows);
 #ifdef _DEBUG
@@ -957,6 +967,7 @@ int main(int argc, char *argv[])
 
 		auto reverse = [&]() {
 			while (1) {
+				runTimesRev++;
 			// Can run
 			//Must be sufficiet pixels generated from the forward pass for rev to proceed 
 			//Do not generate too many pixels such that we write over non-written parts of the output buffer
@@ -989,6 +1000,7 @@ int main(int argc, char *argv[])
 		group.run(reverse);
 
 
+
 		// While there are more images to process
 		while(1){
 
@@ -998,44 +1010,19 @@ int main(int argc, char *argv[])
 			while (1){
 
 				// Should run
-				//We should load as much data into the buffer as possible, which is the currently required forward pixel + sizeOfBuffer - chunk size
-
 
 				//fprintf(stderr, "lastreadpix: %#010x\t inpHeadidx: %#010x\n", lastreadpix, inpHeadidx);
 
-				// Can run
-//				while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + chunksizePix)
-//				{
-//					uint32_t revVal = rev3(w, h, N, midBuff.data(), midwrapmask, x2, y2, revwindows);
-//#ifdef _DEBUG
-//					uint32_t refval = rev(w, h, N, midBuff.data(), midwrapmask, x2, y2);
-//					assert(refval == revVal);
-//#endif
-//
-//					outBuff[outHeadidx] = revVal;
-//					outHeadidx = (outHeadidx + 1) & wrapmaskout;
-//					if (++x2 >= (int)w) {
-//						x2 = 0;
-//						if (++y2 >= (int)h){ //y overflow means we are on next image.
-//							y2 = 0;
-//						}
-//					}
-//					++lastrevpix;
-//					++reqpixRev;
-//				}
-
 				//fprintf(stderr, "lastfwdpix: %#010x\t midHeadidx: %#010x\t reqpixFwd: %#010x\n", lastfwdpix, inpHeadidx, reqpixFwd);
-
-
 
 				//fprintf(stderr, "lastrevpix: %#010x\t outHeadidx: %#010x\t reqpixRev: %#010x\n", lastrevpix, outHeadidx, reqpixRev);
 
 				//if the last generted pixel is more recent than the last generated PLUS the chunkSizePix (which is what is written out), then write out.
-				while (lastrevpix >= lastwritepix	 + chunksizePix )
+				while (lastrevpix >= lastwritepix + chunksizePix  )
 				{
 					fprintf(stderr, "writing\n");
 					//assert(outHeadidx == 0);
-
+					runTimesWrite;
 					// if a regular chunksize write would over-write to output
 					if (EndOfFile && lastwritepix + chunksizePix >= (int)w*(int)h)
 					{
