@@ -849,7 +849,8 @@ int main(int argc, char *argv[])
 		int inpHeadidx = 0;
 		int wrapmask = Cbuffsize - 1;
 
-		std::vector<uint32_t> midBuff(Cbuffsize);
+		std::vector<uint32_t> midBuff(2*Cbuffsize);
+		int midwrapmask = 2*Cbuffsize - 1;
 		int midHeadidx = 0;
 
 		std::vector<uint32_t> tomBuff(w*h*2);
@@ -907,7 +908,7 @@ int main(int argc, char *argv[])
 
 				// Should run
 				//We should load as much data into the buffer as possible, which is the currently required forward pixel + sizeOfBuffer - chunk size
-				while (/*reqpixFwd > lastreadpix*/  lastreadpix - reqpixFwd + (int)w*N <  Cbuffsize - chunksizeBytes)
+				while (/*reqpixFwd > lastreadpix*/  lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizeBytes)
 				{
 					fprintf(stderr, "reading\n");
 					uint64_t bytesread;
@@ -932,7 +933,7 @@ int main(int argc, char *argv[])
 					assert(refval == fwdVal);
 #endif
 					
-					midBuff[midHeadidx & wrapmask] = fwdVal;
+					midBuff[midHeadidx & midwrapmask] = fwdVal;
 					tomBuff[tomHeadidx++] = fwdVal;
 					
 					++midHeadidx;
