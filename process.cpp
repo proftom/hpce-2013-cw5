@@ -842,7 +842,7 @@ int main(int argc, char *argv[])
 		int chunksizeBytes = 1<<12;
 		//int chunksizeBytes = 8;
 		int chunksizePix = chunksizeBytes*8/bits;
-		int maxdata = w*(2*N + 1) + chunksizePix;
+		int maxdata = w*(2*N + 1) + 2*chunksizePix;
 		int Cbuffsize = getnextpow2(maxdata);
 
 		std::vector<uint32_t> inpBuff(Cbuffsize);
@@ -908,7 +908,7 @@ int main(int argc, char *argv[])
 
 				// Should run
 				//We should load as much data into the buffer as possible, which is the currently required forward pixel + sizeOfBuffer - chunk size
-				while (/*reqpixFwd > lastreadpix*/  lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix)
+				while (reqpixFwd + chunksizePix > lastreadpix /* lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix*/)
 				{
 					fprintf(stderr, "reading\n");
 					uint64_t bytesread;
@@ -932,7 +932,7 @@ int main(int argc, char *argv[])
 					uint32_t refval = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
 					assert(refval == fwdVal);
 #endif
-					assert(lastreadpix - Cbuffsize <= lastfwdpix - w*N);
+					assert(lastreadpix - Cbuffsize <= lastfwdpix - (int)(w*N));
 					
 					midBuff[midHeadidx & midwrapmask] = fwdVal;
 					tomBuff[tomHeadidx++] = fwdVal;
