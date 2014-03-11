@@ -15,12 +15,6 @@ Testing wise we didn't get super super keen and start doing lots of test scripts
 Anyway, back to the O(N) algorithm, an example bench mark to whet your appetite
 512x512 @ 4 px, 16 window. Ours = 0.285s, original = 0.780s
 
-Time allowing we would of also produced a further optimisation - i.e. bit packing & "histogram of minimums (maximums)"
-The former will save the hits on memory access, which should be a principle barrier for performance here
-The latter optimisation would of been using a "histogram" to maintain the frequency of the (current) min/max in the diamond. 
-I recommened waiting for the oral to hear about it. 
-This will be very fast for binary images. 
-
 We look forward to the oral interview
 
 The provided reference code will store the entire frame in memory and then process it in two passes. This is not feasable for large data sets, as input dataset can scale up to 32 bits per pixel data with images of up to 2^22 in each dimension, which is simply too large to store in memory.
@@ -45,3 +39,11 @@ The min/max sliding window algorithm maintains a queue of values and index pairs
 Candidate extreme values are pushed into the head of the queue if they could be an extreme value. They recursivley replace any less extreme value at the head of the queue, as the newest value, if more extreme, will drive the value of the window for longer than the previous head of the queue (which entered earlier).
 
 As the queue is implemented as a circular buffer, there is very good temporal locality for accessing this auxiliry data structure, so combined with the O(N) complexity of reducing the contents of the SE, we should see an improvement in execution time per pixel.
+
+== future work / potential optimisations ==
+Another algorithm considered is using a histogram to keep track of the value frequencies within the SE. Sliding the kernel we would requrie 2N additive updates and 2N subtractive updates for the head/tail of the SE respectively.
+The issue is that when the current extreme value has been dropped off the end of the SE, we need to find the next extreme value. This requires searching all the bins, so we get worst case O(k) time to complete, where k is the number of grayscale values that can exist.
+We could maintain an auxiliry priority queue (a min/max heap) to quickly fetch the extreme value in O(log k).
+The best use of this algorithm would be when using binary data, as the lookup would be trivial, and does not require any notable auxiliry data structure like the sliding window approach does.
+
+Currently, the data is still stored as ints, even for binary. Storing packed would generate less memory pressure, which is most likely the bottleneck currently.
