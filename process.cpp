@@ -10,198 +10,23 @@
 
 //Oskar Weigl and Professor Thomas Morrison
 
+//Basically, used minimum sliding window approach to reduce the algorithm from O(N^2) complexity to O(N)
+//
+
+//Time allowing we would of also produced a further optimisation - bit packing
+//This will save the hits on memory 
+//Another optimisation would of been using a "histogram" to maint
+//This would of been faster for 
+
+
+
+//We look forward to the oral interview
+
+//Anyway, for a bit of benchmarking:
 
 
 
 using namespace std;
-/*
-This is a program for performing morphological operations in gray-scale
-images, and in particular very large images. The general idea of
-morphological operations can be found here:
-http://homepages.inf.ed.ac.uk/rbf/HIPR2/matmorph.htm
-
-Changelog:
-- 2014/03/03: Patches to make native windows work, plus some comments
-              about platform portability.
-- 2014/03/02: Typo in second paragraph(!): "a close is a dilate followed by an open" -> "a close is a dilate followed by an erode."
-              Thanks to Oskar Weigl.
-              Made clear that negative values of levels are open, positive are close (wasn't explicit before).
-              Thanks to Thomas Parker.
-- 2014/02/28: Clarified the constraints on the maximum value of the levels parameter (otherwise it is too complex).
-              Thanks to Ryan Savitski
-              Also put a concrete limit on how long a program can wait before reading a pixel (as otherwise I leave
-              it open to legalistic definitions of the metric).
-
-Functionality:
-
-The program performs either open or close operations,
-where an open is an erode followed by a dilate, and
-a close is a dilate followed by an erode.
-
-Our erode operation replaces each pixel with the minimum
-of its Von Neumann neighbourhood, i.e. the left-right
-up-down cross we have used before. Dilate does the same, but
-takes the maximum. At each boundary, the neigbourhood
-it truncated to exclude parts which extend beyond the
-image. So for example, in the top-left corner the
-neighbourhood consists of just {middle,down,right}.
-
-Images are input and output as raw binary gray-scale
-images, with no header. The processing parameters are
-set on the command line as "width height [bits] [levels]":
-    - Width: positive integer, up to and including 2^24
-    - Height: positive integer, up to and including 2^24
-    - Bits: a binary power <=32, default=8
-    - Levels: number of times to erode before dilating (or vice-versa),
-              0 <= abs(levels) <= min(width/4, height/4, 64) 
-              default=1,
-              negative values are open, positive values are close
-
-A constraint is that mod(Width*bits,64)==0. There
-is no constraint on image size, beyond that imposed
-by the width, height, and bits parameters. To be
-more specific: you may be asked to process images up
-to 2^44 or so in pixel count, and your program won't
-be running on a machine with 2^41 bytes of host
-memory, let alone GPU memory.
-
-Image format:
-
-Images are represented as packed binary, in little-endian
-scanline order. For images with less than 8 bits per pixel, the
-left-most pixel is in the MSB. For example, the 64x3 1-bit
-image with packed hex representation:
-
-    00 00 00 00 ff ff ff ff  00 00 f0 f0 00 00 0f 0f  01 02 04 08 10 20 40 80
-
-represents the image:
-
-    0000000000000000000000000000000011111111111111111111111111111111
-    0000000000000000111100001111000000000000000000000000111100001111
-    0000000100000010000001000000100000010000001000000100000010000000
-
-You can use imagemagick to convert to and from binary representation.
-For example, to convert a 512x512 image input.png to 2-bit:
-
-    convert input.png -depth 2 gray:input.raw
-
-and to convert output.raw back again:
-
-    convert -size 512x512 -depth 2 gray:output.raw output.png
-
-They can also read/write on stdin/stdout for streaming. But, it is
-also easy to generate images programmatically, particularly when
-dealing with large images. You can even use /dev/zero and
-friends if you just need something large to shove through,
-or want to focus on performance.
-
-Correctness:
-
-The output images should be bit-accurate correct. Any conflict
-between the operation of this program and the definition of the
-image processing and image format should be seen as a bug in
-this program. For example, this program cannot handle very
-large images, which is a bug.
-
-Performance and constraints:
-
-The metric used to evaluate this work is maximum pixel
-latency. Pixel latency is defined as the time between
-a given pixel entering the program, and the transformed
-pixel at the same co-ordinates leaving the program. The
-goal is to minimise the maximimum latency over all
-pixels. Latency measuring does not start until the first
-pixel enters the pipeline, so performance measurement
-is "on-hold" till that point. However, your program
-must eventually read the first pixel. Practically speaking,
-if your program doesn't read a pixel within ten minutes,
-it will be considered to have hung.
-
-The program should support the full spectrum of input
-parameters correctly, including all image sizes and
-all pixel depths. However, particular emphasis is
-placed on very large 1-bit and 8-bit images. The
-images you'll process can have any pixel distribution, but
-they are often quite sparse, meaning a large proportion
-of the pixels are zero. The zero to non-zero ratio may
-rise to 1:1000000 for very large images, with a large
-amount of spatial clustering of the non-zero pixels.
-That may be useful in some cases... or not.
-
-Execution and compilation:
-
-Your program will be executed on a number of machines,
-and it is your job to try to make it work efficiently
-on whatever it finds. It should work correctly
-on whatever hardware it is executed on, whether it has a K40
-or a dual-core Celeron. Performance is subordinate to
-correctness, so be careful when allocating buffers etc.
-It is always better to fall back to software if
-something goes wrong with OpenCL setup, rather than crashing
-or having the program quit.
-
-Both OpenCL 1.1 and TBB 4.2 will be available at compilation
-time, and it is up to you what you want to use. Recall
-the "on-hold" metric, and consider the possibilities...
-
-Submission:
-
-Your submission should consist of a tar.gz (not a rar or a zip),
-and there should be a directory called "src", which contains
-all the .cpp files that need to be compiled together to
-create your executable. Any header files need to be in that
-directory, or included with relative paths.
-
-The compiler will make OpenCL 1.1 available for #include from
-"CL/*" and "OpenCL/*", and TBB 4.2 from "tbb/*". No other
-libraries should be assumed, beyond standard C++11 libraries.
-Practically speaking, common posix libraries are acceptable (i.e.
-things which are in cygwin+linux+macos+mingw), but attempt for
-portability. Visual studio can be used for development, but be
-careful to avoid windows-specific APIs (e.g. try compiling on
-cygwin before submitting).
-
-Your program will always be run with the "src" directory
-as its working directory, so you can load any kernel
-files from there, or from sub-directories of "src".
-
-As well as your source code, you should also include a
-"readme.txt" or "readme.pdf", which covers the following:
-- What is the approach used to improve performance, in
-  terms of algorithms, patterns, and optimisations.
-- A description of any testing methodology or verification.
-- A summary of how work was partitioned within the pair,
-  including planning, design, and testing, as well as coding.
-This document does not need to be long, it is not a project
-report.
-
-As well as the code and the document, feel free to include
-any other interesting artefacts, such as testing code
-or performance measurements. Just make sure to clean out
-anything large, like test images, object files, executables.
-
-Marking scheme:
-
-33% : Performance, relative to other implementations
-33% : Correctness
-33% : Code review (style, appropriateness of approach, readability...)
-
-Plagiarism:
-
-Everyones submission will be different for this coursework,
-there is little chance of seeing the same code by accident.
-However, you can use whatever code you like from this file.
-You may also use third-party code, but you need to attribute
-it very clearly and carefully, and be able to justify why
-it was used - submissions created from mostly third-party
-code will be frowned upon, but only in terms of marks.
-
-Any code transfer between pairs will be treated as plagiarism.
-I would suggest you keep your code private, not least because
-you are competing with the others.
-
-*/
-
 
 #if !(defined(_WIN32) || defined(_WIN64))
 #include <unistd.h>
@@ -227,7 +52,7 @@ void set_binary_io()
 }
 #endif
 
-void process2(int levels, unsigned w, unsigned h, unsigned /*bits*/, vector<uint32_t> &pixels); //exists in diamondTest.cpp
+#pragma region Davids Stuff
 
 ////////////////////////////////////////////
 // Routines for bringing in binary images
@@ -337,124 +162,108 @@ void write_blob(int fd, uint64_t cbBlob, const void *pBlob)
 		done+=got;
 	}
 }
+#pragma endregion 
 
-///////////////////////////////////////////////////////////////////
-// Basic image processing primitives
-
-uint32_t vmin(uint32_t a, uint32_t b)
-{ return min(a,b); }
-
-uint32_t vmin(uint32_t a, uint32_t b, uint32_t c)
-{ return min(a,min(b,c)); }
-
-uint32_t vmin(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
-{ return min(min(a,d),min(b,c)); }
-
-uint32_t vmin(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e)
-{ return min(e, min(min(a,d),min(b,c))); }
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+//////////////////   CODE					 ///////////////////////
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
 
 
-void erode(unsigned w, unsigned h, const vector<uint32_t> &input, vector<uint32_t> &output)
+//Algorithm inspired by http://leetcode.com/2011/01/sliding-window-maximum.html
+// and http://people.cs.uct.ac.za/~ksmith/articles/sliding_window_minimum.html#sliding-window-minimum-algorithm
+//Sliding window object
+template <class T>
+class minmaxSlidingWindow
 {
-	auto in=[&](int x, int y) -> uint32_t { return input[y*w+x]; };
-	auto out=[&](int x, int y) -> uint32_t & {return output[y*w+x]; };
-	
-	for(unsigned x=0;x<w;x++){
-		if(x==0){
-			out(0,0)=vmin(in(0,0), in(0,1), in(1,0));
-			for(unsigned y=1;y<h-1;y++){
-				out(0,y)=vmin(in(0,y), in(0,y-1), in(1,y), in(0,y+1));
-			}
-			out(0,h-1)=vmin(in(0,h-1), in(0,h-2), in(1,h-1));
-		}else if(x<w-1){
-			out(x,0)=vmin(in(x,0), in(x-1,0), in(x,1), in(x+1,0));
-			for(unsigned y=1;y<h-1;y++){
-				out(x,y)=vmin(in(x,y), in(x-1,y), in(x,y-1), in(x,y+1), in(x+1,y));
-			}
-			out(x,h-1)=vmin(in(x,h-1), in(x-1,h-1), in(x,h-2), in(x+1,h-1));
-		}else{
-			out(w-1,0)=vmin(in(w-1,0), in(w-1,1), in(w-2,0));
-			for(unsigned y=1;y<h-1;y++){
-				out(w-1,y)=vmin(in(w-1,y), in(w-1,y-1), in(w-2,y), in(w-1,y+1));
-			}
-			out(w-1,h-1)=vmin(in(w-1,h-1), in(w-1,h-2), in(w-2,h-1));
-		}
+private:
+	// Using a circular buffer with the "leave one space empty" full vs empty destinction strategy
+	vector<pair<int, T>> Q;
+	int headidx;
+	int tailidx;
+	int buffsize; //we actually allocate buffsize+1
+	bool computemax;
+
+	int wrap(int idx){
+		if (idx < 0)
+			return buffsize;
+		else
+			return idx>buffsize ? 0 : idx;
 	}
+
+	//less_equal for min, greater_equal for max
+	bool comp(T a, T b){
+		return computemax ? (a >= b) : (a <= b);
+	}
+public:
+	minmaxSlidingWindow(int win, bool computemaxin)
+		: Q(win + 1), headidx(0), tailidx(0), buffsize(win), computemax(computemaxin)
+	{}
+
+	//windowhead is standard algo idx, windowtail is usually idx-windowsize except at edges
+
+	T push(int windowhead, T val){
+		while (headidx != tailidx && comp(val, Q[wrap(headidx - 1)].second))
+			headidx = wrap(--headidx);
+
+		Q[headidx] = make_pair(windowhead, val);
+		headidx = wrap(++headidx);
+
+		return Q[tailidx].second;
+	}
+
+	T pushpop(int windowhead, int windowtail, T val){
+		while (headidx != tailidx && comp(val, Q[wrap(headidx - 1)].second))
+			headidx = wrap(--headidx);
+		while (headidx != tailidx && Q[tailidx].first <= windowtail)
+			tailidx = wrap(++tailidx);
+
+		Q[headidx] = make_pair(windowhead, val);
+		headidx = wrap(++headidx);
+
+		return Q[tailidx].second;
+	}
+
+	T pop(int windowtail){
+		while (headidx != tailidx && Q[tailidx].first <= windowtail)
+			tailidx = wrap(++tailidx);
+
+		return Q[tailidx].second;
+	}
+
+	T current(){
+		return Q[tailidx].second;
+	}
+
+	void reset(){
+		headidx = 0;
+		tailidx = 0;
+	}
+
+};
+
+
+//Algorithm from http://stackoverflow.com/a/1322548/1128910
+unsigned getnextpow2(unsigned n){
+	n--;
+	n |= n >> 1;   // Divide by 2^k for consecutive doublings of k up to 32,
+	n |= n >> 2;   // and then or the results.
+	n |= n >> 4;
+	n |= n >> 8;
+	n |= n >> 16;
+	n++;
+
+	return n;
 }
 
-uint32_t vmax(uint32_t a, uint32_t b)
-{ return max(a,b); }
 
-uint32_t vmax(uint32_t a, uint32_t b, uint32_t c)
-{ return max(a,max(b,c)); }
-
-uint32_t vmax(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
-{ return max(max(a,d),max(b,c)); }
-
-uint32_t vmax(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e)
-{ return max(e, max(max(a,d),max(b,c))); }
-
-void dilate(unsigned w, unsigned h, const vector<uint32_t> &input, vector<uint32_t> &output)
-{
-	auto in=[&](int x, int y) -> uint32_t { return input[y*w+x]; };
-	auto out=[&](int x, int y) -> uint32_t & {return output[y*w+x]; };
-	
-	for(unsigned x=0;x<w;x++){
-		if(x==0){
-			out(0,0)=vmax(in(0,0), in(0,1), in(1,0));
-			for(unsigned y=1;y<h-1;y++){
-				out(0,y)=vmax(in(0,y), in(0,y-1), in(1,y), in(0,y+1));
-			}
-			out(0,h-1)=vmax(in(0,h-1), in(0,h-2), in(1,h-1));
-		}else if(x<w-1){
-			out(x,0)=vmax(in(x,0), in(x-1,0), in(x,1), in(x+1,0));
-			for(unsigned y=1;y<h-1;y++){
-				out(x,y)=vmax(in(x,y), in(x-1,y), in(x,y-1), in(x,y+1), in(x+1,y));
-			}
-			out(x,h-1)=vmax(in(x,h-1), in(x-1,h-1), in(x,h-2), in(x+1,h-1));
-		}else{
-			out(w-1,0)=vmax(in(w-1,0), in(w-1,1), in(w-2,0));
-			for(unsigned y=1;y<h-1;y++){
-				out(w-1,y)=vmax(in(w-1,y), in(w-1,y-1), in(w-2,y), in(w-1,y+1));
-			}
-			out(w-1,h-1)=vmax(in(w-1,h-1), in(w-1,h-2), in(w-2,h-1));
-		}
-	}
-}
-
-///////////////////////////////////////////////////////////////////
-// Composite image processing
-
-void process(int levels, unsigned w, unsigned h, unsigned /*bits*/, vector<uint32_t> &pixels)
-{
-	vector<uint32_t> buffer(w*h);
-	
-	// Depending on whether levels is positive or negative,
-	// we flip the order round.
-	auto fwd=levels < 0 ? erode : dilate;
-	auto rev=levels < 0 ? dilate : erode;
-	
-	for(int i=0;i<abs(levels);i++){
-		fwd(w, h, pixels, buffer);
-		swap(pixels, buffer);
-	}
-	for(int i=0;i<abs(levels);i++){
-		rev(w,h,pixels, buffer);
-		swap(pixels, buffer);
-	}
-}
-
-// You may want to play with this to check you understand what is going on
-void invert(unsigned w, unsigned h, unsigned bits, vector<uint32_t> &pixels)
-{
-	uint32_t mask=0xFFFFFFFFul>>bits;
-	
-	for(unsigned i=0;i<w*h;i++){
-		pixels[i]=mask-pixels[i];
-	}
-}
-
-uint32_t erode2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y) {
+//Erode-dialate functions
+//Deprecated functions that first optimised by increasing size of diamond rather than doing it in lots of little passes. 
+//This is more memory efficient than the original implementation as we only need to keep 2*width*N+1 things in the buffer 
+//N is "height" (from center) of "diamon" - see diagram below
+//We keep the code below for purposes of showcasing and benchmarking
+uint32_t erode_deprecated(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y) {
 
 	////////////////////////////////
 	////////////////////////////////
@@ -521,7 +330,7 @@ uint32_t erode2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y
 
 }
 
-uint32_t dilate2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y) {
+uint32_t dilate_deprecated(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y) {
 
 	////////////////////////////////
 	////////////////////////////////
@@ -588,80 +397,10 @@ uint32_t dilate2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int 
 
 }
 
-//Algorithm inspired by http://leetcode.com/2011/01/sliding-window-maximum.html
-// and http://people.cs.uct.ac.za/~ksmith/articles/sliding_window_minimum.html#sliding-window-minimum-algorithm
+//These 2 pr
+uint32_t dilate(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, vector<minmaxSlidingWindow<uint32_t>> &maxslideWindows){
 
-template <class T> 
-class minmaxSlidingWindow
-{
-private:
-	// Using a circular buffer with the "leave one space empty" full vs empty destinction strategy
-	vector<pair<int, T>> Q;
-	int headidx;
-	int tailidx;
-	int buffsize; //we actually allocate buffsize+1
-	bool computemax;
-
-	int wrap(int idx){
-		if (idx < 0)
-			return buffsize;
-		else
-			return idx>buffsize ? 0 : idx;
-	}
-
-	 //less_equal for min, greater_equal for max
-	bool comp(T a, T b){
-		return computemax ? (a >= b) : (a <= b);
-	}
-public:
-	minmaxSlidingWindow(int win, bool computemaxin)
-	: Q(win+1), headidx(0), tailidx(0), buffsize(win), computemax(computemaxin)
-	{}
-
-	//windowhead is standard algo idx, windowtail is usually idx-windowsize except at edges
-
-	T push(int windowhead, T val){
-		while(headidx != tailidx && comp(val, Q[wrap(headidx-1)].second))
-			headidx = wrap(--headidx);
-		
-		Q[headidx] = make_pair(windowhead, val);
-		headidx = wrap(++headidx);
-
-		return Q[tailidx].second;
-	}
-
-	T pushpop(int windowhead, int windowtail, T val){
-		while(headidx != tailidx && comp(val, Q[wrap(headidx-1)].second))
-			headidx = wrap(--headidx);
-		while(headidx != tailidx && Q[tailidx].first <= windowtail)
-			tailidx = wrap(++tailidx);
-
-		Q[headidx] = make_pair(windowhead, val);
-		headidx = wrap(++headidx);
-
-		return Q[tailidx].second;
-	}
-
-	T pop(int windowtail){
-		while(headidx != tailidx && Q[tailidx].first <= windowtail)
-			tailidx = wrap(++tailidx);
-
-		return Q[tailidx].second;
-	}
-
-	T current(){
-		return Q[tailidx].second;
-	}
-
-	void reset(){
-		headidx = 0;
-		tailidx = 0;
-	}
-	
-};
-
-uint32_t dilate3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, vector<minmaxSlidingWindow<uint32_t>> &maxslideWindows){
-	int starty = max(y-n, 0);
+	int starty = max(y - n, 0);
 	int xwidth = n - (y-starty);
 	int xfirst = x - xwidth;
 	int xlast = x + xwidth;
@@ -723,7 +462,7 @@ uint32_t dilate3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int 
 	return maxVal;
 }
 
-uint32_t erode3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, vector<minmaxSlidingWindow<uint32_t>> &minslideWindows){
+uint32_t erode(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, vector<minmaxSlidingWindow<uint32_t>> &minslideWindows){
 	int starty = max(y-n, 0);
 	int xwidth = n - (y-starty);
 	int xfirst = x - xwidth;
@@ -786,19 +525,6 @@ uint32_t erode3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y
 	return minVal;
 }
 
-//Algorithm from http://stackoverflow.com/a/1322548/1128910
-unsigned getnextpow2(unsigned n){
-	n--;
-	n |= n >> 1;   // Divide by 2^k for consecutive doublings of k up to 32,
-	n |= n >> 2;   // and then or the results.
-	n |= n >> 4;
-	n |= n >> 8;
-	n |= n >> 16;
-	n++;
-
-	return n;
-}
-
 int main(int argc, char *argv[])
 {
 
@@ -845,26 +571,30 @@ int main(int argc, char *argv[])
 
 		//TODO: use bitset to represent the binary versions. It supports hardware counting of bits on SSE4.2
 
-		int N = abs(levels);
-		int chunksizeBytes = 1<<12;
-		//int chunksizeBytes = 8;
-		int chunksizePix = chunksizeBytes*8/bits;
-		int maxdata = w*(2*N + 1) + 2*chunksizePix;
-		int Cbuffsize = getnextpow2(maxdata);
+		int 
+			N = abs(levels),
+			chunksizeBytes = 1<<12,	//"Work unit" - how much we move in or out of the buffer
+			chunksizePix = chunksizeBytes*8/bits,
+			maxdata = w*(2*N + 1) + 2*chunksizePix,
+			Cbuffsize = getnextpow2(maxdata);
 
 		vector<uint32_t> inpBuff(Cbuffsize);
-		int inpHeadidx = 0;
-		int wrapmask = Cbuffsize - 1;
+		int 
+			inpHeadidx = 0,
+			wrapmask = Cbuffsize - 1;
 
 		vector<uint32_t> midBuff(Cbuffsize);
-		int midwrapmask = Cbuffsize - 1;
-		int midHeadidx = 0;
-
-
+		int 
+			midwrapmask = Cbuffsize - 1,
+			midHeadidx = 0;
+		
+		//Output buffer between reverse output and writing out. 
+		//As we write out in chunks, only needs to be 2*chunkSize (2x to prevent starvation)
 		vector<uint32_t> outBuff(2*chunksizePix);
-		int outHeadidx = 0;
-		int outTailidx = 0;
-		int wrapmaskout = 2*chunksizePix - 1;
+		int 
+			outHeadidx = 0,
+			outTailidx = 0,
+			wrapmaskout = 2*chunksizePix - 1;
 
 		vector<uint64_t> rawchunk(chunksizeBytes/8);
 
@@ -873,17 +603,18 @@ int main(int argc, char *argv[])
 		//auto fwd=levels < 0 ? erode2 : dilate2;
 		//auto rev=levels < 0 ? dilate2 : erode2;
 
-		auto fwd3 = levels < 0 ? erode3 : dilate3;
-		auto rev3 = levels < 0 ? dilate3 : erode3;
+		auto fwd3 = levels < 0 ? erode : dilate;
+		auto rev3 = levels < 0 ? dilate : erode;
 	
 		//Pipeline/inter-thread communication variables
 		//Note that only ever 1 thread writes to a variable, all other thread write
-		int lastreadpix = -1;
-		int reqpixFwd = w*N; //last pixel required by current computation
-		int lastfwdpix = -1;
-		int reqpixRev = w*N;
-		int lastrevpix = -1;
-		int lastwritepix = -1;
+		int 
+			lastreadpix = -1,
+			reqpixFwd = w*N, //last pixel dependency required by fwd computation
+			lastfwdpix = -1,
+			reqpixRev = w*N, //last pixel dependency required by rev computation
+			lastrevpix = -1,
+			lastwritepix = -1;
 		
 		bool 
 			EndOfFile = 0,	
@@ -910,7 +641,7 @@ int main(int argc, char *argv[])
 		
 		tbb::task_group group;
 		
-		//Use spin locking. Avoids OS overhead of context switching, and will be blocked for relatively small periods of time, hence prefer use over mutexes.
+		//Use spin locking. Avoids OS overhead of context switching, and will be blocked for relatively "small" periods of time, so no mutexing today.
 		//3 seperate threads 
 		//			- 1 for forward pass
 		//			- 1 for reverse pass
