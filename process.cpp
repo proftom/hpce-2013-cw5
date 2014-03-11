@@ -870,9 +870,14 @@ int main(int argc, char *argv[])
 
 		// Depending on whether levels is positive or negative,
 		// we flip the order round.
-		auto fwd=levels < 0 ? erode2 : dilate2;
-		auto rev=levels < 0 ? dilate2 : erode2;
+		//auto fwd=levels < 0 ? erode2 : dilate2;
+		//auto rev=levels < 0 ? dilate2 : erode2;
+
+		auto fwd3 = levels < 0 ? erode3 : dilate3;
+		auto rev3 = levels < 0 ? dilate3 : erode3;
 	
+		//Pipeline/inter-thread communication variables
+		//Note that only ever 1 thread writes to a variable, all other thread write
 		int lastreadpix = -1;
 		int reqpixFwd = w*N; //last pixel required by current computation
 		int lastfwdpix = -1;
@@ -902,57 +907,31 @@ int main(int argc, char *argv[])
 		auto fwdwindows = levels < 0 ? minslideWindows : maxslideWindows;
 		auto revwindows = levels < 0 ? maxslideWindows : minslideWindows;
 
-		auto fwd3=levels < 0 ? erode3 : dilate3;
-		auto rev3=levels < 0 ? dilate3 : erode3;
-		bool bTest = true;
-		bool bTest2 = true;
 
-		int runTimesRead = 0;
-		int runTimesForwrd = 0;
-		int runTimesRev = 0;
-		int runTimesWrite = 0;
+						 
 
-		 
+
 
 		tbb::task_group group;
 		
+		//Use spin locking. Avoids OS overhead of context switching, and will be blocked for relatively small periods of time, hence prefer use over mutexes
 
-		auto readData = [&]() {
-			while (1) {
-				//If the required foward pixel is greater than the last pixel read (
-				while (reqpixFwd + chunksizePix >= lastreadpix /* lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix*/)
-				{
-					runTimesRead++;
-					fprintf(stderr, "reading\n");
-					uint64_t bytesread;
-					EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
-					//int numpixread = EndOfFile ? bytesread*8/bits : chunksizePix;
-					int numpixread = chunksizePix; //we pretend we kept reading, to make the check easier for next stages.
-					unpack_blob(numpixread, bits, &rawchunk[0], (uint32_t*)&inpBuff[inpHeadidx]);
-					inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
-					lastreadpix += numpixread;
-
-				}
-				if (bExit)
-					break;
-			}
-		};
-		
+		//Forward pass thread
 		auto forward = [&]() {
 			while (1) {
 				//The last pixel read needs to be atleast the required pixel for the fwd dependecy
 				//The required pixel for the reverse stage must be atleast the last forward pixel produced
+				//Chunk size for reading ahead, so we don't starve the pipeline
 				while (lastreadpix >= reqpixFwd && lastfwdpix <= reqpixRev + chunksizePix /*lastfwdpix < reqpixRev*/)
 				{
-
-					runTimesForwrd++;
-					//fprintf(stderr, "fwd\n");
+					
 					uint32_t fwdVal = fwd3(w, h, N, inpBuff.data(), wrapmask, x1, y1, fwdwindows);
 #ifdef _DEBUG
 					uint32_t refval = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
-					assert(refval == fwdVal);
-#endif
+					//assert(refval == fwdVal);
 					assert(lastreadpix - Cbuffsize <= lastfwdpix - (int)(w*N));
+#endif
+					
 
 					midBuff[midHeadidx & midwrapmask] = fwdVal;
 
@@ -983,10 +962,10 @@ int main(int argc, char *argv[])
 				while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + chunksizePix)
 				{
 					uint32_t revVal = rev3(w, h, N, midBuff.data(), midwrapmask, x2, y2, revwindows);
-#ifdef _DEBUG
+					#ifdef _DEBUG
 					uint32_t refval = rev(w, h, N, midBuff.data(), midwrapmask, x2, y2);
 					assert(refval == revVal);
-#endif
+					#endif
 
 					outBuff[outHeadidx] = revVal;
 					outHeadidx = (outHeadidx + 1) & wrapmaskout;
@@ -1004,22 +983,18 @@ int main(int argc, char *argv[])
 		}
 		};
 
-		//group.run(readData);
 		group.run(forward);
 		group.run(reverse);
-
 		
 
 		// While there are more images to process
 		while(1){
 
-			// The great pipeline.
 			// When the input stream ends, the early stages will operate on invalid data.
 			// This is fine as it does not affect the output
 			while (1){
-				while (reqpixFwd + chunksizePix >= lastreadpix /* lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix*/)
+				while (reqpixFwd + chunksizePix >= lastreadpix)
 				{
-					runTimesRead++;
 					fprintf(stderr, "reading\n");
 					uint64_t bytesread;
 					EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
@@ -1030,26 +1005,14 @@ int main(int argc, char *argv[])
 					lastreadpix += numpixread;
 				}
 
-				// Should run
-
-				//fprintf(stderr, "lastreadpix: %#010x\t inpHeadidx: %#010x\n", lastreadpix, inpHeadidx);
-				
-
-
-				//fprintf(stderr, "lastfwdpix: %#010x\t midHeadidx: %#010x\t reqpixFwd: %#010x\n", lastfwdpix, inpHeadidx, reqpixFwd);
-
-
-
-				//fprintf(stderr, "lastrevpix: %#010x\t outHeadidx: %#010x\t reqpixRev: %#010x\n", lastrevpix, outHeadidx, reqpixRev);
 
 
 				//if the last generted pixel is more recent than the last written PLUS the chunkSizePix (which is what shall be written out), then write out.
-				while (lastrevpix >= lastwritepix + chunksizePix  )
+				while (lastrevpix >= lastwritepix + chunksizePix )
 				{
 
 					fprintf(stderr, "writing\n");
 					//assert(outHeadidx == 0);
-					runTimesWrite++;
 					// if a regular chunksize write would over-write to output
 					if (EndOfFile && lastwritepix + chunksizePix >= (int)w*(int)h )
 					{
