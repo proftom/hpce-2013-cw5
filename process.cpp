@@ -260,8 +260,141 @@ unsigned getnextpow2(unsigned n){
 
 
 //Erode-dialate functions
+
+//These 2 methods use the sliding window objects to keep a current min/max of the diamond
+uint32_t dilate(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, vector<minmaxSlidingWindow<uint32_t>> &maxslideWindows){
+
+	int starty = max(y - n, 0);
+	int xwidth = n - (y - starty);
+	int xfirst = x - xwidth;
+	int xlast = x + xwidth;
+	int offset = y - n;
+	uint32_t maxVal = 0;
+
+	auto computewindow = [&](int i){
+		uint32_t slideval;
+		if (x == 0)
+		{
+			maxslideWindows[i - offset].reset();
+			for (int j = 0; j <= xlast; ++j)
+			{
+				maxslideWindows[i - offset].push(j, ptrBuffer[(i*w + j) & mask]);
+			}
+			slideval = maxslideWindows[i - offset].current();
+
+		}
+		else if (xlast >= (int)w) {
+			slideval = maxslideWindows[i - offset].pop(xfirst - 1);
+		}
+		else {
+			slideval = maxslideWindows[i - offset].pushpop(xlast, xfirst - 1, ptrBuffer[(i*w + xlast) & mask]);
+		}
+
+#ifdef _DEBUG
+		uint32_t dbgval = 0;
+		for (int j = max(xfirst, 0); j <= min(xlast, w - 1); ++j)
+		{
+			dbgval = max(ptrBuffer[(i*w + j) & mask], dbgval);
+		}
+		assert(dbgval == slideval);
+#endif
+
+		maxVal = max(maxVal, slideval);
+	};
+
+
+	//Upper half and middle of diamond
+	for (int i = starty; i <= y; ++i)
+	{
+		computewindow(i);
+
+		--xfirst;
+		++xlast;
+	}
+
+	// start shrinking x scan instead
+	xfirst += 2;
+	xlast -= 2;
+
+	// Lower half
+	for (int i = y + 1; i <= min(y + n, (int)h - 1); ++i)
+	{
+		computewindow(i);
+
+		++xfirst;
+		--xlast;
+	}
+
+	return maxVal;
+}
+
+uint32_t erode(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, vector<minmaxSlidingWindow<uint32_t>> &minslideWindows){
+	int starty = max(y - n, 0);
+	int xwidth = n - (y - starty);
+	int xfirst = x - xwidth;
+	int xlast = x + xwidth;
+	int offset = y - n;
+	uint32_t minVal = -1;
+
+	auto computewindow = [&](int i){
+		uint32_t slideval;
+		if (x == 0)
+		{
+			minslideWindows[i - offset].reset();
+			for (int j = 0; j <= xlast; ++j)
+			{
+				minslideWindows[i - offset].push(j, ptrBuffer[(i*w + j) & mask]);
+			}
+			slideval = minslideWindows[i - offset].current();
+
+		}
+		else if (xlast >= (int)w) {
+			slideval = minslideWindows[i - offset].pop(xfirst - 1);
+		}
+		else {
+			slideval = minslideWindows[i - offset].pushpop(xlast, xfirst - 1, ptrBuffer[(i*w + xlast) & mask]);
+		}
+
+#ifdef _DEBUG
+		uint32_t dbgval = -1;
+		for (int j = max(xfirst, 0); j <= min(xlast, w - 1); ++j)
+		{
+			dbgval = min(ptrBuffer[(i*w + j) & mask], dbgval);
+		}
+		assert(dbgval == slideval);
+#endif
+
+		minVal = min(minVal, slideval);
+	};
+
+
+	//Upper half and middle of diamond
+	for (int i = starty; i <= y; ++i)
+	{
+		computewindow(i);
+
+		--xfirst;
+		++xlast;
+	}
+
+	// start shrinking x scan instead
+	xfirst += 2;
+	xlast -= 2;
+
+	// Lower half
+	for (int i = y + 1; i <= min(y + n, (int)h - 1); ++i)
+	{
+		computewindow(i);
+
+		++xfirst;
+		--xlast;
+	}
+
+	return minVal;
+}
+
 //Deprecated functions that first optimised by increasing size of diamond rather than doing it in lots of little passes. 
-//This is more memory efficient than the original implementation as we only need to keep 2*width*N+1 things in the buffer 
+//This is more memory efficient than the original implementation as we only need to keep 2*w*N+1 things in the buffer 
 //N is "height" (from center) of "diamon" - see diagram below
 //We keep the code below for purposes of showcasing and benchmarking
 uint32_t erode_deprecated(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y) {
@@ -398,133 +531,6 @@ uint32_t dilate_deprecated(int w, int h, int n, uint32_t* ptrBuffer, int mask, i
 
 }
 
-//These 2 pr
-uint32_t dilate(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, vector<minmaxSlidingWindow<uint32_t>> &maxslideWindows){
-
-	int starty = max(y - n, 0);
-	int xwidth = n - (y-starty);
-	int xfirst = x - xwidth;
-	int xlast = x + xwidth;
-	int offset = y-n;
-	uint32_t maxVal = 0;
-
-	auto computewindow = [&](int i){
-		uint32_t slideval;
-		if (x == 0)
-		{
-			maxslideWindows[i - offset].reset();
-			for (int j = 0; j <= xlast; ++j)
-			{
-				maxslideWindows[i - offset].push(j, ptrBuffer[(i*w + j) & mask]);
-			}
-			slideval = maxslideWindows[i - offset].current();
-
-		} else if (xlast >= (int)w) {
-			slideval = maxslideWindows[i - offset].pop(xfirst-1);
-		} else {
-			slideval = maxslideWindows[i - offset].pushpop(xlast, xfirst-1, ptrBuffer[(i*w + xlast) & mask]);
-		}
-
-#ifdef _DEBUG
-		uint32_t dbgval = 0;
-		for (int j = max(xfirst, 0); j <= min(xlast, w-1); ++j)
-		{
-			dbgval = max(ptrBuffer[(i*w + j) & mask], dbgval);
-		}
-		assert(dbgval == slideval);
-#endif
-
-		maxVal = max(maxVal, slideval);
-	};
-
-
-	//Upper half and middle of diamond
-	for (int i = starty; i <= y ; ++i)
-	{
-		computewindow(i);
-
-		--xfirst;
-		++xlast;
-	}
-
-	// start shrinking x scan instead
-	xfirst += 2;
-	xlast -= 2;
-
-	// Lower half
-	for (int i = y+1; i <= min(y+n, (int)h-1); ++i)
-	{
-		computewindow(i);
-
-		++xfirst;
-		--xlast;
-	}
-
-	return maxVal;
-}
-
-uint32_t erode(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, vector<minmaxSlidingWindow<uint32_t>> &minslideWindows){
-	int starty = max(y-n, 0);
-	int xwidth = n - (y-starty);
-	int xfirst = x - xwidth;
-	int xlast = x + xwidth;
-	int offset = y-n;
-	uint32_t minVal = -1;
-
-	auto computewindow = [&](int i){
-		uint32_t slideval;
-		if (x == 0)
-		{
-			minslideWindows[i - offset].reset();
-			for (int j = 0; j <= xlast; ++j)
-			{
-				minslideWindows[i - offset].push(j, ptrBuffer[(i*w + j) & mask]);
-			}
-			slideval = minslideWindows[i - offset].current();
-
-		} else if (xlast >= (int)w) {
-			slideval = minslideWindows[i - offset].pop(xfirst-1);
-		} else {
-			slideval = minslideWindows[i - offset].pushpop(xlast, xfirst-1, ptrBuffer[(i*w + xlast) & mask]);
-		}
-
-#ifdef _DEBUG
-		uint32_t dbgval = -1;
-		for (int j = max(xfirst, 0); j <= min(xlast, w-1); ++j)
-		{
-			dbgval = min(ptrBuffer[(i*w + j) & mask], dbgval);
-		}
-		assert(dbgval == slideval);
-#endif
-
-		minVal = min(minVal, slideval);
-	};
-
-
-	//Upper half and middle of diamond
-	for (int i = starty; i <= y ; ++i)
-	{
-		computewindow(i);
-
-		--xfirst;
-		++xlast;
-	}
-
-	// start shrinking x scan instead
-	xfirst += 2;
-	xlast -= 2;
-
-	// Lower half
-	for (int i = y+1; i <= min(y+n, (int)h-1); ++i)
-	{
-		computewindow(i);
-
-		++xfirst;
-		--xlast;
-	}
-
-	return minVal;
-}
 
 int main(int argc, char *argv[])
 {
