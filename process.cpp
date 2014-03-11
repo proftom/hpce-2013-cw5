@@ -885,14 +885,15 @@ int main(int argc, char *argv[])
 		int lastrevpix = -1;
 		int lastwritepix = -1;
 		
-		bool EndOfFile = 0;
+		bool 
+			EndOfFile = 0,	
+			bExit = false;
 
-		bool bExit = false;
-
-		int y1 = 0;
-		int x1 = 0;
-		int y2 = 0;
-		int x2 = 0;
+		int 
+			y1 = 0,
+			x1 = 0,
+			y2 = 0,
+			x2 = 0;
 		
 		vector<minmaxSlidingWindow<uint32_t>> minslideWindows;
 		minslideWindows.reserve(2*N + 1);
@@ -906,17 +907,16 @@ int main(int argc, char *argv[])
 
 		auto fwdwindows = levels < 0 ? minslideWindows : maxslideWindows;
 		auto revwindows = levels < 0 ? maxslideWindows : minslideWindows;
-
-
-						 
-
-
-
+		
 		tbb::task_group group;
 		
-		//Use spin locking. Avoids OS overhead of context switching, and will be blocked for relatively small periods of time, hence prefer use over mutexes
+		//Use spin locking. Avoids OS overhead of context switching, and will be blocked for relatively small periods of time, hence prefer use over mutexes.
+		//3 seperate threads 
+		//			- 1 for forward pass
+		//			- 1 for reverse pass
+		//			- 1 for writing and reading 
 
-		//Forward pass thread
+		//Forward pass 
 		auto forward = [&]() {
 			while (1) {
 				//The last pixel read needs to be atleast the required pixel for the fwd dependecy
@@ -927,15 +927,12 @@ int main(int argc, char *argv[])
 					
 					uint32_t fwdVal = fwd3(w, h, N, inpBuff.data(), wrapmask, x1, y1, fwdwindows);
 #ifdef _DEBUG
-					uint32_t refval = fwd(w, h, N, inpBuff.data(), wrapmask, x1, y1);
-					//assert(refval == fwdVal);
+					//One Naboo crusier got past the blockade
 					assert(lastreadpix - Cbuffsize <= lastfwdpix - (int)(w*N));
-#endif
-					
+#endif				
 
 					midBuff[midHeadidx & midwrapmask] = fwdVal;
-
-
+					
 					++midHeadidx;
 					if (++x1 >= (int)w) {
 						x1 = 0;
@@ -943,7 +940,6 @@ int main(int argc, char *argv[])
 							y1 = 0;
 						}
 					}
-
 						++lastfwdpix;
 						++reqpixFwd;
 					
@@ -953,19 +949,15 @@ int main(int argc, char *argv[])
 			}
 		};
 
+		//Reverse pass 
 		auto reverse = [&]() {
 			while (1) {
 
-			// Can run
 			//Must be sufficiet pixels generated from the forward pass for rev to proceed 
 			//Do not generate too many pixels such that we write over non-written parts of the output buffer
 				while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + chunksizePix)
 				{
 					uint32_t revVal = rev3(w, h, N, midBuff.data(), midwrapmask, x2, y2, revwindows);
-					#ifdef _DEBUG
-					uint32_t refval = rev(w, h, N, midBuff.data(), midwrapmask, x2, y2);
-					assert(refval == revVal);
-					#endif
 
 					outBuff[outHeadidx] = revVal;
 					outHeadidx = (outHeadidx + 1) & wrapmaskout;
@@ -983,6 +975,7 @@ int main(int argc, char *argv[])
 		}
 		};
 
+		//Start the reactor 
 		group.run(forward);
 		group.run(reverse);
 		
@@ -993,9 +986,12 @@ int main(int argc, char *argv[])
 			// When the input stream ends, the early stages will operate on invalid data.
 			// This is fine as it does not affect the output
 			while (1){
+				
+				//While the forwad pass requires new pixels greater than a chunk (our granulised unit of work), read another unit of work in
+				//The additional chunksizePix exists so the buffer reads one ahead, preventing the pipeline from starving
 				while (reqpixFwd + chunksizePix >= lastreadpix)
 				{
-					fprintf(stderr, "reading\n");
+
 					uint64_t bytesread;
 					EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
 					//int numpixread = EndOfFile ? bytesread*8/bits : chunksizePix;
@@ -1007,15 +1003,15 @@ int main(int argc, char *argv[])
 
 
 
-				//if the last generted pixel is more recent than the last written PLUS the chunkSizePix (which is what shall be written out), then write out.
+				//if the last generted pixel is more recent than the last written PLUS the chunkSizePix 
+				//(which is what shall be written out), then write out to file
 				while (lastrevpix >= lastwritepix + chunksizePix )
 				{
-
-					fprintf(stderr, "writing\n");
-					//assert(outHeadidx == 0);
+					
 					// if a regular chunksize write would over-write to output
 					if (EndOfFile && lastwritepix + chunksizePix >= (int)w*(int)h )
 					{
+						//Called either when either the stream of file ends
 						int pixleft = (w*h - 1) - lastwritepix;
 						pack_blob(pixleft, bits, &outBuff[outTailidx], &rawchunk[0]);
 						outTailidx = (outTailidx + pixleft) & wrapmaskout;
@@ -1032,8 +1028,6 @@ int main(int argc, char *argv[])
 
 				if (bExit)
 					break;
-
-				//fprintf(stderr, "\n");
 				
 			}
 
