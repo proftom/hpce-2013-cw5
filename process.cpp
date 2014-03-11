@@ -8,27 +8,28 @@
 #include <cstdint>
 #include <task_group.h>
 
-//Oskar Weigl and Professor Thomas Morrison
+//Oskar Weigl and Thomas Morrison
 
 //Basically, used minimum sliding window approach to reduce the algorithm from O(N^2) complexity to O(N)
-//
+//As the great David once said, "parallisation is no substitute for a greater algorithm". Or close enough
+
+//An example bench mark:
+//512x512 @ 4 px, 16 window. Ours = 0.285s, original = 0.780s
 
 //Time allowing we would of also produced a further optimisation - bit packing
-//This will save the hits on memory 
-//Another optimisation would of been using a "histogram" to maint
-//This would of been faster for 
-
-
+//This will save the hits on memory access, which should be the principle barrier for performance  here
+//Another optimisation would of been using a "histogram" to maintain the frequency of the (current) min/max in the diamond. 
+//I recommened waiting for the oral to hear about it. 
+//This will be very fast for binary images. 
 
 //We look forward to the oral interview
-
-//Anyway, for a bit of benchmarking:
 
 
 
 using namespace std;
 
 #if !(defined(_WIN32) || defined(_WIN64))
+//"I just love Windows. Microsoft only hires super smart people." - Oskar
 #include <unistd.h>
 void set_binary_io()
 {}
@@ -597,17 +598,31 @@ int main(int argc, char *argv[])
 			wrapmaskout = 2*chunksizePix - 1;
 
 		vector<uint64_t> rawchunk(chunksizeBytes/8);
+		
+		//Sliding windows 
+		vector<minmaxSlidingWindow<uint32_t>> minslideWindows;
+		minslideWindows.reserve(2 * N + 1);
+		for (int i = 0; i < 2 * N + 1; ++i)
+			minslideWindows.push_back(minmaxSlidingWindow<uint32_t>(2 * N + 1, false));
 
+		vector<minmaxSlidingWindow<uint32_t>> maxslideWindows;
+		maxslideWindows.reserve(2 * N + 1);
+		for (int i = 0; i < 2 * N + 1; ++i)
+			maxslideWindows.push_back(minmaxSlidingWindow<uint32_t>(2 * N + 1, true));
+		
 		// Depending on whether levels is positive or negative,
 		// we flip the order round.
 		//auto fwd=levels < 0 ? erode2 : dilate2;
 		//auto rev=levels < 0 ? dilate2 : erode2;
 
+		auto fwdwindows = levels < 0 ? minslideWindows : maxslideWindows;
+		auto revwindows = levels < 0 ? maxslideWindows : minslideWindows;
+
 		auto fwd3 = levels < 0 ? erode : dilate;
 		auto rev3 = levels < 0 ? dilate : erode;
 	
 		//Pipeline/inter-thread communication variables
-		//Note that only ever 1 thread writes to a variable, all other thread write
+		//Note that only ever 1 thread writes to a variable, all other threads can only read
 		int 
 			lastreadpix = -1,
 			reqpixFwd = w*N, //last pixel dependency required by fwd computation
@@ -626,19 +641,7 @@ int main(int argc, char *argv[])
 			y2 = 0,
 			x2 = 0;
 		
-		vector<minmaxSlidingWindow<uint32_t>> minslideWindows;
-		minslideWindows.reserve(2*N + 1);
-		for (int i = 0; i < 2*N + 1; ++i)
-			minslideWindows.push_back(minmaxSlidingWindow<uint32_t>(2*N+1, false));
 
-		vector<minmaxSlidingWindow<uint32_t>> maxslideWindows;
-		maxslideWindows.reserve(2*N + 1);
-		for (int i = 0; i < 2*N + 1; ++i)
-			maxslideWindows.push_back(minmaxSlidingWindow<uint32_t>(2*N+1, true));
-
-		auto fwdwindows = levels < 0 ? minslideWindows : maxslideWindows;
-		auto revwindows = levels < 0 ? maxslideWindows : minslideWindows;
-		
 		tbb::task_group group;
 		
 		//Use spin locking. Avoids OS overhead of context switching, and will be blocked for relatively "small" periods of time, so no mutexing today.
@@ -742,7 +745,7 @@ int main(int argc, char *argv[])
 					// if a regular chunksize write would over-write to output
 					if (EndOfFile && lastwritepix + chunksizePix >= (int)w*(int)h )
 					{
-						//Called either when either the stream of file ends
+						//Called either when the stream ends or EOF reached
 						int pixleft = (w*h - 1) - lastwritepix;
 						pack_blob(pixleft, bits, &outBuff[outTailidx], &rawchunk[0]);
 						outTailidx = (outTailidx + pixleft) & wrapmaskout;
@@ -765,7 +768,7 @@ int main(int argc, char *argv[])
 			if(EndOfFile)
 				break;
 
-			//We may have processed some some of next image's data, so compensate and continue
+			//We may have processed some of next image's data, so compensate and continue
 			lastreadpix -= w*h;
 			reqpixFwd -= w*h;
 			lastfwdpix -= w*h;
