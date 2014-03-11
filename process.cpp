@@ -6,11 +6,10 @@
 #include <iostream>
 #include <string>
 #include <cstdint>
-
-//#include "task_group.h"
-//#include "parallel_for.h"
 #include <task_group.h>
-#include "atomic.h"
+
+//Oskar Weigl and Professor Thomas Morrison
+
 
 
 
@@ -874,22 +873,13 @@ int main(int argc, char *argv[])
 		auto fwd=levels < 0 ? erode2 : dilate2;
 		auto rev=levels < 0 ? dilate2 : erode2;
 	
-		tbb::atomic<int> lastreadpix;// = -1;
-		tbb::atomic<int> reqpixFwd;// = w*N; //last pixel required by current computation
-		tbb::atomic<int> lastfwdpix;// = -1;
-		tbb::atomic<int> reqpixRev;// = w*N;
-		tbb::atomic<int> lastrevpix;// = -1;
-		tbb::atomic<int> lastwritepix;// = -1;
-
-		lastreadpix.fetch_and_store(-1);
-		reqpixFwd.fetch_and_store(w*N);
-		lastfwdpix.fetch_and_store(-1);
-		reqpixRev.fetch_and_store(w*N);
-		lastrevpix.fetch_and_store(-1);
-		lastwritepix.fetch_and_store(-1);
-
-
-
+		int lastreadpix = -1;
+		int reqpixFwd = w*N; //last pixel required by current computation
+		int lastfwdpix = -1;
+		int reqpixRev = w*N;
+		int lastrevpix = -1;
+		int lastwritepix = -1;
+		
 		bool EndOfFile = 0;
 
 		bool bExit = false;
@@ -898,12 +888,7 @@ int main(int argc, char *argv[])
 		int x1 = 0;
 		int y2 = 0;
 		int x2 = 0;
-
-		int produce = 0;
-		int produce2 = 0;
-		int produce3 = 0;
 		
-
 		vector<minmaxSlidingWindow<uint32_t>> minslideWindows;
 		minslideWindows.reserve(2*N + 1);
 		for (int i = 0; i < 2*N + 1; ++i)
@@ -947,7 +932,6 @@ int main(int argc, char *argv[])
 					inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
 					lastreadpix += numpixread;
 
-					produce += numpixread;
 				}
 				if (bExit)
 					break;
@@ -960,8 +944,7 @@ int main(int argc, char *argv[])
 				//The required pixel for the reverse stage must be atleast the last forward pixel produced
 				while (lastreadpix >= reqpixFwd && lastfwdpix <= reqpixRev + chunksizePix /*lastfwdpix < reqpixRev*/)
 				{
-					produce--;
-					produce2++;
+
 					runTimesForwrd++;
 					//fprintf(stderr, "fwd\n");
 					uint32_t fwdVal = fwd3(w, h, N, inpBuff.data(), wrapmask, x1, y1, fwdwindows);
@@ -1045,8 +1028,6 @@ int main(int argc, char *argv[])
 					unpack_blob(numpixread, bits, &rawchunk[0], (uint32_t*)&inpBuff[inpHeadidx]);
 					inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
 					lastreadpix += numpixread;
-
-					produce += numpixread;
 				}
 
 				// Should run
@@ -1065,7 +1046,7 @@ int main(int argc, char *argv[])
 				//if the last generted pixel is more recent than the last written PLUS the chunkSizePix (which is what shall be written out), then write out.
 				while (lastrevpix >= lastwritepix + chunksizePix  )
 				{
-					produce3--;
+
 					fprintf(stderr, "writing\n");
 					//assert(outHeadidx == 0);
 					runTimesWrite++;
