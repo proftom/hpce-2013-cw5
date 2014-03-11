@@ -6,9 +6,15 @@
 #include <iostream>
 #include <string>
 #include <cstdint>
-#include "task_group.h"
-#include "parallel_for.h"
 
+//#include "task_group.h"
+//#include "parallel_for.h"
+#include <task_group.h>
+#include "atomic.h"
+
+
+
+using namespace std;
 /*
 This is a program for performing morphological operations in gray-scale
 images, and in particular very large images. The general idea of
@@ -222,7 +228,7 @@ void set_binary_io()
 }
 #endif
 
-void process2(int levels, unsigned w, unsigned h, unsigned /*bits*/, std::vector<uint32_t> &pixels); //exists in diamondTest.cpp
+void process2(int levels, unsigned w, unsigned h, unsigned /*bits*/, vector<uint32_t> &pixels); //exists in diamondTest.cpp
 
 ////////////////////////////////////////////
 // Routines for bringing in binary images
@@ -304,13 +310,13 @@ bool read_blob(int fd, uint64_t cbBlob, uint64_t &done, void *pBlob)
 	
 	done=0;
 	while(done<cbBlob){
-		int todo=(int)std::min(uint64_t(1)<<30, cbBlob-done);		
+		int todo=(int)min(uint64_t(1)<<30, cbBlob-done);		
 		
 		int got=read(fd, pBytes+done, todo);
 		if(got==0)
 			return false;	// end of file
 		if(got<=0){
-			throw std::invalid_argument("Read failure.");
+			throw invalid_argument("Read failure.");
 		}
 		done+=got;
 	}
@@ -324,11 +330,11 @@ void write_blob(int fd, uint64_t cbBlob, const void *pBlob)
 	
 	uint64_t done=0;
 	while(done<cbBlob){
-		int todo=(int)std::min(uint64_t(1)<<30, cbBlob-done);
+		int todo=(int)min(uint64_t(1)<<30, cbBlob-done);
 		
 		int got=write(fd, pBytes+done, todo);
 		if(got<=0)
-			throw std::invalid_argument("Write failure.");
+			throw invalid_argument("Write failure.");
 		done+=got;
 	}
 }
@@ -337,19 +343,19 @@ void write_blob(int fd, uint64_t cbBlob, const void *pBlob)
 // Basic image processing primitives
 
 uint32_t vmin(uint32_t a, uint32_t b)
-{ return std::min(a,b); }
+{ return min(a,b); }
 
 uint32_t vmin(uint32_t a, uint32_t b, uint32_t c)
-{ return std::min(a,std::min(b,c)); }
+{ return min(a,min(b,c)); }
 
 uint32_t vmin(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
-{ return std::min(std::min(a,d),std::min(b,c)); }
+{ return min(min(a,d),min(b,c)); }
 
 uint32_t vmin(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e)
-{ return std::min(e, std::min(std::min(a,d),std::min(b,c))); }
+{ return min(e, min(min(a,d),min(b,c))); }
 
 
-void erode(unsigned w, unsigned h, const std::vector<uint32_t> &input, std::vector<uint32_t> &output)
+void erode(unsigned w, unsigned h, const vector<uint32_t> &input, vector<uint32_t> &output)
 {
 	auto in=[&](int x, int y) -> uint32_t { return input[y*w+x]; };
 	auto out=[&](int x, int y) -> uint32_t & {return output[y*w+x]; };
@@ -378,18 +384,18 @@ void erode(unsigned w, unsigned h, const std::vector<uint32_t> &input, std::vect
 }
 
 uint32_t vmax(uint32_t a, uint32_t b)
-{ return std::max(a,b); }
+{ return max(a,b); }
 
 uint32_t vmax(uint32_t a, uint32_t b, uint32_t c)
-{ return std::max(a,std::max(b,c)); }
+{ return max(a,max(b,c)); }
 
 uint32_t vmax(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
-{ return std::max(std::max(a,d),std::max(b,c)); }
+{ return max(max(a,d),max(b,c)); }
 
 uint32_t vmax(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e)
-{ return std::max(e, std::max(std::max(a,d),std::max(b,c))); }
+{ return max(e, max(max(a,d),max(b,c))); }
 
-void dilate(unsigned w, unsigned h, const std::vector<uint32_t> &input, std::vector<uint32_t> &output)
+void dilate(unsigned w, unsigned h, const vector<uint32_t> &input, vector<uint32_t> &output)
 {
 	auto in=[&](int x, int y) -> uint32_t { return input[y*w+x]; };
 	auto out=[&](int x, int y) -> uint32_t & {return output[y*w+x]; };
@@ -420,27 +426,27 @@ void dilate(unsigned w, unsigned h, const std::vector<uint32_t> &input, std::vec
 ///////////////////////////////////////////////////////////////////
 // Composite image processing
 
-void process(int levels, unsigned w, unsigned h, unsigned /*bits*/, std::vector<uint32_t> &pixels)
+void process(int levels, unsigned w, unsigned h, unsigned /*bits*/, vector<uint32_t> &pixels)
 {
-	std::vector<uint32_t> buffer(w*h);
+	vector<uint32_t> buffer(w*h);
 	
 	// Depending on whether levels is positive or negative,
 	// we flip the order round.
 	auto fwd=levels < 0 ? erode : dilate;
 	auto rev=levels < 0 ? dilate : erode;
 	
-	for(int i=0;i<std::abs(levels);i++){
+	for(int i=0;i<abs(levels);i++){
 		fwd(w, h, pixels, buffer);
-		std::swap(pixels, buffer);
+		swap(pixels, buffer);
 	}
-	for(int i=0;i<std::abs(levels);i++){
+	for(int i=0;i<abs(levels);i++){
 		rev(w,h,pixels, buffer);
-		std::swap(pixels, buffer);
+		swap(pixels, buffer);
 	}
 }
 
 // You may want to play with this to check you understand what is going on
-void invert(unsigned w, unsigned h, unsigned bits, std::vector<uint32_t> &pixels)
+void invert(unsigned w, unsigned h, unsigned bits, vector<uint32_t> &pixels)
 {
 	uint32_t mask=0xFFFFFFFFul>>bits;
 	
@@ -463,27 +469,27 @@ uint32_t erode2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y
 
 	auto checkbounds = [=](int x, int y){
 		if (x<0)
-			std::cerr << x << " " << y << " outside of left bound\n\r";
+			cerr << x << " " << y << " outside of left bound\n\r";
 		if (x >= w)
-			std::cerr << x << " " << y << " outside of right bound\n\r";
+			cerr << x << " " << y << " outside of right bound\n\r";
 		if (y<0)
-			std::cerr << x << " " << y << " outside of top bound\n\r";
+			cerr << x << " " << y << " outside of top bound\n\r";
 		if (y >= h)
-			std::cerr << x << " " << y << " outside of bottom bound\n\r";
+			cerr << x << " " << y << " outside of bottom bound\n\r";
 	};
 
 	unsigned minValue = -1;
 
 	//Upper half and middle of diamond
-	int starty = std::max(y-n, 0);
+	int starty = max(y-n, 0);
 	int xwidth = n - (y-starty);
 	int xfirst = x - xwidth;
 	int xlast = x + xwidth;
 	for (int i = starty; i <= y; ++i)
 	{
-		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		for (int j = max(xfirst, 0); j <= min(xlast, w-1); ++j)
 		{
-			minValue = std::min(ptrBuffer[(i*w + j) & mask], minValue);
+			minValue = min(ptrBuffer[(i*w + j) & mask], minValue);
 			
 			#ifdef _DEBUG
 			checkbounds(j, i);
@@ -498,11 +504,11 @@ uint32_t erode2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y
 	xlast -= 2;
 
 	// Lower half
-	for (int i = y+1; i <= std::min(y+n, h-1); ++i)
+	for (int i = y+1; i <= min(y+n, h-1); ++i)
 	{
-		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		for (int j = max(xfirst, 0); j <= min(xlast, w-1); ++j)
 		{
-			minValue = std::min(ptrBuffer[(i*w + j) & mask], minValue);
+			minValue = min(ptrBuffer[(i*w + j) & mask], minValue);
 
 			#ifdef _DEBUG
 			checkbounds(j, i);
@@ -530,27 +536,27 @@ uint32_t dilate2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int 
 
 	auto checkbounds = [=](int x, int y){
 		if (x<0)
-			std::cerr << x << " " << y << " outside of left bound\n\r";
+			cerr << x << " " << y << " outside of left bound\n\r";
 		if (x >= w)
-			std::cerr << x << " " << y << " outside of right bound\n\r";
+			cerr << x << " " << y << " outside of right bound\n\r";
 		if (y<0)
-			std::cerr << x << " " << y << " outside of top bound\n\r";
+			cerr << x << " " << y << " outside of top bound\n\r";
 		if (y >= h)
-			std::cerr << x << " " << y << " outside of bottom bound\n\r";
+			cerr << x << " " << y << " outside of bottom bound\n\r";
 	};
 
 	unsigned maxValue = 0;
 
 	//Upper half and middle of diamond
-	int starty = std::max(y-n, 0);
+	int starty = max(y-n, 0);
 	int xwidth = n - (y-starty);
 	int xfirst = x - xwidth;
 	int xlast = x + xwidth;
 	for (int i = starty; i <= y; ++i)
 	{
-		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		for (int j = max(xfirst, 0); j <= min(xlast, w-1); ++j)
 		{
-			maxValue = std::max(ptrBuffer[(i*w + j) & mask], maxValue);
+			maxValue = max(ptrBuffer[(i*w + j) & mask], maxValue);
 			
 			#ifdef _DEBUG
 			checkbounds(j, i);
@@ -565,11 +571,11 @@ uint32_t dilate2(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int 
 	xlast -= 2;
 
 	// Lower half
-	for (int i = y+1; i <= std::min(y+n, h-1); ++i)
+	for (int i = y+1; i <= min(y+n, h-1); ++i)
 	{
-		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		for (int j = max(xfirst, 0); j <= min(xlast, w-1); ++j)
 		{
-			maxValue = std::max(ptrBuffer[(i*w + j) & mask], maxValue);
+			maxValue = max(ptrBuffer[(i*w + j) & mask], maxValue);
 
 			#ifdef _DEBUG
 			checkbounds(j, i);
@@ -591,7 +597,7 @@ class minmaxSlidingWindow
 {
 private:
 	// Using a circular buffer with the "leave one space empty" full vs empty destinction strategy
-	std::vector<std::pair<int, T>> Q;
+	vector<pair<int, T>> Q;
 	int headidx;
 	int tailidx;
 	int buffsize; //we actually allocate buffsize+1
@@ -619,7 +625,7 @@ public:
 		while(headidx != tailidx && comp(val, Q[wrap(headidx-1)].second))
 			headidx = wrap(--headidx);
 		
-		Q[headidx] = std::make_pair(windowhead, val);
+		Q[headidx] = make_pair(windowhead, val);
 		headidx = wrap(++headidx);
 
 		return Q[tailidx].second;
@@ -631,7 +637,7 @@ public:
 		while(headidx != tailidx && Q[tailidx].first <= windowtail)
 			tailidx = wrap(++tailidx);
 
-		Q[headidx] = std::make_pair(windowhead, val);
+		Q[headidx] = make_pair(windowhead, val);
 		headidx = wrap(++headidx);
 
 		return Q[tailidx].second;
@@ -655,8 +661,8 @@ public:
 	
 };
 
-uint32_t dilate3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, std::vector<minmaxSlidingWindow<uint32_t>> &maxslideWindows){
-	int starty = std::max(y-n, 0);
+uint32_t dilate3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, vector<minmaxSlidingWindow<uint32_t>> &maxslideWindows){
+	int starty = max(y-n, 0);
 	int xwidth = n - (y-starty);
 	int xfirst = x - xwidth;
 	int xlast = x + xwidth;
@@ -682,14 +688,14 @@ uint32_t dilate3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int 
 
 #ifdef _DEBUG
 		uint32_t dbgval = 0;
-		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		for (int j = max(xfirst, 0); j <= min(xlast, w-1); ++j)
 		{
-			dbgval = std::max(ptrBuffer[(i*w + j) & mask], dbgval);
+			dbgval = max(ptrBuffer[(i*w + j) & mask], dbgval);
 		}
 		assert(dbgval == slideval);
 #endif
 
-		maxVal = std::max(maxVal, slideval);
+		maxVal = max(maxVal, slideval);
 	};
 
 
@@ -707,7 +713,7 @@ uint32_t dilate3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int 
 	xlast -= 2;
 
 	// Lower half
-	for (int i = y+1; i <= std::min(y+n, (int)h-1); ++i)
+	for (int i = y+1; i <= min(y+n, (int)h-1); ++i)
 	{
 		computewindow(i);
 
@@ -718,8 +724,8 @@ uint32_t dilate3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int 
 	return maxVal;
 }
 
-uint32_t erode3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, std::vector<minmaxSlidingWindow<uint32_t>> &minslideWindows){
-	int starty = std::max(y-n, 0);
+uint32_t erode3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y, vector<minmaxSlidingWindow<uint32_t>> &minslideWindows){
+	int starty = max(y-n, 0);
 	int xwidth = n - (y-starty);
 	int xfirst = x - xwidth;
 	int xlast = x + xwidth;
@@ -745,14 +751,14 @@ uint32_t erode3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y
 
 #ifdef _DEBUG
 		uint32_t dbgval = -1;
-		for (int j = std::max(xfirst, 0); j <= std::min(xlast, w-1); ++j)
+		for (int j = max(xfirst, 0); j <= min(xlast, w-1); ++j)
 		{
-			dbgval = std::min(ptrBuffer[(i*w + j) & mask], dbgval);
+			dbgval = min(ptrBuffer[(i*w + j) & mask], dbgval);
 		}
 		assert(dbgval == slideval);
 #endif
 
-		minVal = std::min(minVal, slideval);
+		minVal = min(minVal, slideval);
 	};
 
 
@@ -770,7 +776,7 @@ uint32_t erode3(int w, int h, int n, uint32_t* ptrBuffer, int mask, int x, int y
 	xlast -= 2;
 
 	// Lower half
-	for (int i = y+1; i <= std::min(y+n, (int)h-1); ++i)
+	for (int i = y+1; i <= min(y+n, (int)h-1); ++i)
 	{
 		computewindow(i);
 
@@ -814,17 +820,17 @@ int main(int argc, char *argv[])
 		}
 		
 		if(bits>32)
-			throw std::invalid_argument("Bits must be <= 32.");
+			throw invalid_argument("Bits must be <= 32.");
 		
 		unsigned tmp=bits;
 		while(tmp!=1){
 			tmp>>=1;
 			if(tmp==0)
-				throw std::invalid_argument("Bits must be a binary power.");
+				throw invalid_argument("Bits must be a binary power.");
 		}
 		
 		if( ((w*bits)%64) != 0){
-			throw std::invalid_argument(" width*bits must be divisible by 64.");
+			throw invalid_argument(" width*bits must be divisible by 64.");
 		}
 		
 		int levels=1;
@@ -838,42 +844,51 @@ int main(int argc, char *argv[])
 
 
 
-		//TODO: use std::bitset to represent the binary versions. It supports hardware counting of bits on SSE4.2
+		//TODO: use bitset to represent the binary versions. It supports hardware counting of bits on SSE4.2
 
-		int N = std::abs(levels);
+		int N = abs(levels);
 		int chunksizeBytes = 1<<12;
 		//int chunksizeBytes = 8;
 		int chunksizePix = chunksizeBytes*8/bits;
 		int maxdata = w*(2*N + 1) + 2*chunksizePix;
 		int Cbuffsize = getnextpow2(maxdata);
 
-		std::vector<uint32_t> inpBuff(Cbuffsize);
+		vector<uint32_t> inpBuff(Cbuffsize);
 		int inpHeadidx = 0;
 		int wrapmask = Cbuffsize - 1;
 
-		std::vector<uint32_t> midBuff(Cbuffsize);
+		vector<uint32_t> midBuff(Cbuffsize);
 		int midwrapmask = Cbuffsize - 1;
 		int midHeadidx = 0;
 
 
-		std::vector<uint32_t> outBuff(2*chunksizePix);
+		vector<uint32_t> outBuff(2*chunksizePix);
 		int outHeadidx = 0;
 		int outTailidx = 0;
 		int wrapmaskout = 2*chunksizePix - 1;
 
-		std::vector<uint64_t> rawchunk(chunksizeBytes/8);
+		vector<uint64_t> rawchunk(chunksizeBytes/8);
 
 		// Depending on whether levels is positive or negative,
 		// we flip the order round.
 		auto fwd=levels < 0 ? erode2 : dilate2;
 		auto rev=levels < 0 ? dilate2 : erode2;
 	
-		int lastreadpix = -1;
-		int reqpixFwd = w*N; //last pixel required by current computation
-		int lastfwdpix = -1;
-		int reqpixRev = w*N;
-		int lastrevpix = -1;
-		int lastwritepix = -1;
+		tbb::atomic<int> lastreadpix;// = -1;
+		tbb::atomic<int> reqpixFwd;// = w*N; //last pixel required by current computation
+		tbb::atomic<int> lastfwdpix;// = -1;
+		tbb::atomic<int> reqpixRev;// = w*N;
+		tbb::atomic<int> lastrevpix;// = -1;
+		tbb::atomic<int> lastwritepix;// = -1;
+
+		lastreadpix.fetch_and_store(-1);
+		reqpixFwd.fetch_and_store(w*N);
+		lastfwdpix.fetch_and_store(-1);
+		reqpixRev.fetch_and_store(w*N);
+		lastrevpix.fetch_and_store(-1);
+		lastwritepix.fetch_and_store(-1);
+
+
 
 		bool EndOfFile = 0;
 
@@ -885,14 +900,16 @@ int main(int argc, char *argv[])
 		int x2 = 0;
 
 		int produce = 0;
-		int consume = 0;
+		int produce2 = 0;
+		int produce3 = 0;
+		
 
-		std::vector<minmaxSlidingWindow<uint32_t>> minslideWindows;
+		vector<minmaxSlidingWindow<uint32_t>> minslideWindows;
 		minslideWindows.reserve(2*N + 1);
 		for (int i = 0; i < 2*N + 1; ++i)
 			minslideWindows.push_back(minmaxSlidingWindow<uint32_t>(2*N+1, false));
 
-		std::vector<minmaxSlidingWindow<uint32_t>> maxslideWindows;
+		vector<minmaxSlidingWindow<uint32_t>> maxslideWindows;
 		maxslideWindows.reserve(2*N + 1);
 		for (int i = 0; i < 2*N + 1; ++i)
 			maxslideWindows.push_back(minmaxSlidingWindow<uint32_t>(2*N+1, true));
@@ -910,12 +927,15 @@ int main(int argc, char *argv[])
 		int runTimesRev = 0;
 		int runTimesWrite = 0;
 
+		 
+
 		tbb::task_group group;
+		
 
 		auto readData = [&]() {
 			while (1) {
-				//If the required foward pixel is greater than the last pixel read read in a chunk
-				while (reqpixFwd + chunksizePix > lastreadpix /* lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix*/)
+				//If the required foward pixel is greater than the last pixel read (
+				while (reqpixFwd + chunksizePix >= lastreadpix /* lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix*/)
 				{
 					runTimesRead++;
 					fprintf(stderr, "reading\n");
@@ -926,6 +946,8 @@ int main(int argc, char *argv[])
 					unpack_blob(numpixread, bits, &rawchunk[0], (uint32_t*)&inpBuff[inpHeadidx]);
 					inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
 					lastreadpix += numpixread;
+
+					produce += numpixread;
 				}
 				if (bExit)
 					break;
@@ -936,8 +958,10 @@ int main(int argc, char *argv[])
 			while (1) {
 				//The last pixel read needs to be atleast the required pixel for the fwd dependecy
 				//The required pixel for the reverse stage must be atleast the last forward pixel produced
-				while (lastreadpix >= reqpixFwd && reqpixRev + chunksizePix >= lastfwdpix )
+				while (lastreadpix >= reqpixFwd && lastfwdpix <= reqpixRev + chunksizePix /*lastfwdpix < reqpixRev*/)
 				{
+					produce--;
+					produce2++;
 					runTimesForwrd++;
 					//fprintf(stderr, "fwd\n");
 					uint32_t fwdVal = fwd3(w, h, N, inpBuff.data(), wrapmask, x1, y1, fwdwindows);
@@ -957,8 +981,10 @@ int main(int argc, char *argv[])
 							y1 = 0;
 						}
 					}
-					++lastfwdpix;
-					++reqpixFwd;
+
+						++lastfwdpix;
+						++reqpixFwd;
+					
 				}
 				if (bExit)
 					break;
@@ -967,39 +993,39 @@ int main(int argc, char *argv[])
 
 		auto reverse = [&]() {
 			while (1) {
-				runTimesRev++;
+
 			// Can run
 			//Must be sufficiet pixels generated from the forward pass for rev to proceed 
 			//Do not generate too many pixels such that we write over non-written parts of the output buffer
-			while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + chunksizePix )
-			{
-				uint32_t revVal = rev3(w, h, N, midBuff.data(), midwrapmask, x2, y2, revwindows);
+				while (lastfwdpix >= reqpixRev &&  lastrevpix < lastwritepix + chunksizePix)
+				{
+					uint32_t revVal = rev3(w, h, N, midBuff.data(), midwrapmask, x2, y2, revwindows);
 #ifdef _DEBUG
-				uint32_t refval = rev(w, h, N, midBuff.data(), midwrapmask, x2, y2);
-				assert(refval == revVal);
+					uint32_t refval = rev(w, h, N, midBuff.data(), midwrapmask, x2, y2);
+					assert(refval == revVal);
 #endif
 
-				outBuff[outHeadidx] = revVal;
-				outHeadidx = (outHeadidx + 1) & wrapmaskout;
-				if (++x2 >= (int)w) {
-					x2 = 0;
-					if (++y2 >= (int)h){ //y overflow means we are on next image.
-						y2 = 0;
+					outBuff[outHeadidx] = revVal;
+					outHeadidx = (outHeadidx + 1) & wrapmaskout;
+					if (++x2 >= (int)w) {
+						x2 = 0;
+						if (++y2 >= (int)h){ //y overflow means we are on next image.
+							y2 = 0;
+						}
 					}
+					++lastrevpix;
+					++reqpixRev;
 				}
-				++lastrevpix;
-				++reqpixRev;
-			}
 			if (bExit)
 				break;
 		}
 		};
 
-		group.run(readData);
+		//group.run(readData);
 		group.run(forward);
 		group.run(reverse);
 
-
+		
 
 		// While there are more images to process
 		while(1){
@@ -1008,18 +1034,38 @@ int main(int argc, char *argv[])
 			// When the input stream ends, the early stages will operate on invalid data.
 			// This is fine as it does not affect the output
 			while (1){
+				while (reqpixFwd + chunksizePix >= lastreadpix /* lastreadpix - lastfwdpix + (int)w*N <=  Cbuffsize - chunksizePix*/)
+				{
+					runTimesRead++;
+					fprintf(stderr, "reading\n");
+					uint64_t bytesread;
+					EndOfFile = !read_blob(STDIN_FILENO, chunksizeBytes, bytesread, (uint64_t*)&rawchunk[0]);
+					//int numpixread = EndOfFile ? bytesread*8/bits : chunksizePix;
+					int numpixread = chunksizePix; //we pretend we kept reading, to make the check easier for next stages.
+					unpack_blob(numpixread, bits, &rawchunk[0], (uint32_t*)&inpBuff[inpHeadidx]);
+					inpHeadidx = (inpHeadidx + numpixread) & wrapmask;
+					lastreadpix += numpixread;
+
+					produce += numpixread;
+				}
 
 				// Should run
 
 				//fprintf(stderr, "lastreadpix: %#010x\t inpHeadidx: %#010x\n", lastreadpix, inpHeadidx);
+				
+
 
 				//fprintf(stderr, "lastfwdpix: %#010x\t midHeadidx: %#010x\t reqpixFwd: %#010x\n", lastfwdpix, inpHeadidx, reqpixFwd);
 
+
+
 				//fprintf(stderr, "lastrevpix: %#010x\t outHeadidx: %#010x\t reqpixRev: %#010x\n", lastrevpix, outHeadidx, reqpixRev);
+
 
 				//if the last generted pixel is more recent than the last written PLUS the chunkSizePix (which is what shall be written out), then write out.
 				while (lastrevpix >= lastwritepix + chunksizePix  )
 				{
+					produce3--;
 					fprintf(stderr, "writing\n");
 					//assert(outHeadidx == 0);
 					runTimesWrite++;
@@ -1058,8 +1104,8 @@ int main(int argc, char *argv[])
 		}
 		
 		return 0;
-	}catch(std::exception &e){
-		std::cerr<<"Caught exception : "<<e.what()<<"\n";
+	}catch(exception &e){
+		cerr<<"Caught exception : "<<e.what()<<"\n";
 		return 1;
 	}
 }
