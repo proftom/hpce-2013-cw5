@@ -9,19 +9,19 @@
 #include <task_group.h>
 
 //Oskar Weigl and Thomas Morrison
-
-//Basically, used minimum sliding window approach to reduce the algorithm from O(N^2) complexity to O(N)
-//As the great David once said, "parallisation is no substitute for a greater algorithm". Or close enough
-
+//
+//Used minimum sliding window approach to reduce the algorithm from O(N^2) complexity to O(N)
+//As the great David once said, "great parallisation is no substitute for a greater algorithm". Or close enough
+//
 //An example bench mark:
 //512x512 @ 4 px, 16 window. Ours = 0.285s, original = 0.780s
-
-//Time allowing we would of also produced a further optimisation - bit packing
-//This will save the hits on memory access, which should be the principle barrier for performance  here
-//Another optimisation would of been using a "histogram" to maintain the frequency of the (current) min/max in the diamond. 
+//
+//Time allowing we would of also produced a further optimisation - i.e. bit packing & "histogram of minimums (maximums)"
+//The former will save the hits on memory access, which should be a principle barrier for performance here
+//The latter optimisation would of been using a "histogram" to maintain the frequency of the (current) min/max in the diamond. 
 //I recommened waiting for the oral to hear about it. 
 //This will be very fast for binary images. 
-
+//
 //We look forward to the oral interview
 
 
@@ -645,8 +645,7 @@ int main(int argc, char *argv[])
 			y1 = 0,
 			x1 = 0,
 			y2 = 0,
-			x2 = 0;
-		
+			x2 = 0;		
 
 		tbb::task_group group;
 		
